@@ -1,0 +1,19 @@
+# Persistent runtime data — never commit (contains live DB + the AES vault key)
+data/
+secret.key
+*.db
+*.db-wal
+*.db-shm
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Local env / editor
+.env
+.venv/
+venv/
+.DS_Store
+.idea/
+.vscode/

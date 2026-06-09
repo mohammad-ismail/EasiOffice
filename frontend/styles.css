@@ -1,0 +1,260 @@
+:root {
+    /* Monochrome palette (overridden at runtime by the theme switcher in app.js).
+       Morning mode = black & white; status meaning is carried by greyscale intensity. */
+    --color-primary: #1C1C1C;
+    --color-primary-hover: #000000;
+    --color-primary-light: #EDEDED;
+    --color-accent: #1C1C1C;
+    --color-accent-hover: #000000;
+    --color-accent-light: #ECECEC;
+    --color-goingon: #1C1C1C;   /* Working   — darkest (active) */
+    --color-completed: #A8A8A8; /* Completed — faded (done) */
+    --color-stuck: #707070;     /* Pending   — mid grey */
+
+    /* Apple-style system typography */
+    --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+               "Helvetica Neue", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+                 "Liberation Mono", monospace;
+}
+
+/* ============================================================
+   Global typography — crisp, system-native (SF on Apple, Segoe on Windows)
+   ============================================================ */
+html { -webkit-text-size-adjust: 100%; }
+body {
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.011em;
+    background-color: #f4f4f4;
+}
+.font-sans { font-family: var(--font-ui) !important; }
+.font-mono { font-family: var(--font-mono) !important; }
+
+/* Tighten heading tracking the way SF Pro Display does at large sizes */
+h1, h2, h3, h4 { letter-spacing: -0.022em; }
+
+/* Readability floor: never render data/labels at hairline sizes */
+.text-\[9px\], .text-\[10px\], .text-\[11px\] { font-size: 12px !important; line-height: 1.4; }
+.text-xs { font-size: 13px !important; line-height: 1.5; }
+
+[v-cloak] { display: none; }
+
+/* ============================================================
+   Sharp corners — square everything (per design reference).
+   Overrides every Tailwind rounded-* utility and component radius.
+   ============================================================ */
+*, *::before, *::after { border-radius: 0 !important; }
+
+/* Morning (black & white) canvas tone */
+.bg-gray-50,
+.bg-gray-50\/50,
+.bg-gray-50\/30,
+.bg-gray-50\/20 { background-color: #f4f4f4; }
+
+/* ============================================================
+   Scrollbars — thin, translucent (used in both light & cream modes)
+   ============================================================ */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.22); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.35); background-clip: padding-box; }
+
+/* ============================================================
+   Subtle motion (used by .animate-fade-in / .animate-slide-in markup)
+   ============================================================ */
+@keyframes appFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.animate-fade-in { animation: appFadeIn 0.28s ease both; }
+@keyframes appSlideIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+.animate-slide-in { animation: appSlideIn 0.3s cubic-bezier(0.32, 0.72, 0, 1) both; }
+
+/* ============================================================
+   macOS-style sidebar — fit-to-content width
+   ============================================================ */
+.app-sidebar {
+    background: rgba(244, 244, 244, 0.82);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border-right: 1px solid rgba(0, 0, 0, 0.08);
+}
+.app-sidebar .brand-title { color: #111111; }
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.5rem 0.7rem;
+    border-radius: 0.6rem;
+    color: #3a3a3a;
+    font-size: 15px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.nav-link i { width: 1.45rem; text-align: center; font-size: 1.02rem; color: #6e6e6e; transition: color 0.15s ease; }
+.nav-link:hover { background: rgba(0, 0, 0, 0.05); }
+.nav-link.active { background: rgba(0, 0, 0, 0.08); color: #000000; font-weight: 600; }
+.nav-link.active i { color: #000000; }
+
+/* Collapsed rail: center the glyphs */
+.app-sidebar.collapsed .nav-link { justify-content: center; padding: 0.55rem 0; gap: 0; }
+
+/* ============================================================
+   Kanban board (Dashboard)
+   ============================================================ */
+.kanban-col {
+    background: rgba(0, 0, 0, 0.025);
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    border-radius: 18px;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.kanban-col.drag-over {
+    background: rgba(0, 0, 0, 0.05);
+    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.55);
+}
+.kanban-card {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 14px;
+    cursor: grab;
+    transition: box-shadow 0.16s ease, transform 0.1s ease, border-color 0.16s ease;
+}
+.kanban-card:hover { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.09); border-color: rgba(0, 0, 0, 0.16); }
+.kanban-card:active { cursor: grabbing; }
+.kanban-card.dragging { opacity: 0.4; }
+
+/* Generic card surface for redesigned grids */
+.app-card {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    transition: box-shadow 0.16s ease, transform 0.12s ease, border-color 0.16s ease;
+}
+.app-card:hover { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.08); border-color: rgba(0, 0, 0, 0.16); }
+
+/* Status accent rail used on cards (greyscale intensity = state) */
+.rail-working { box-shadow: inset 4px 0 0 var(--color-goingon); }
+.rail-pending { box-shadow: inset 4px 0 0 var(--color-stuck); }
+.rail-completed { box-shadow: inset 4px 0 0 var(--color-completed); }
+.rail-unassigned { box-shadow: inset 4px 0 0 #C7C7C7; }
+
+/* Status pills — greyscale (work on both white & cream) */
+.pill { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.18rem 0.6rem; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+.pill-working { background: rgba(0, 0, 0, 0.10); color: #1a1a1a; }
+.pill-pending { background: rgba(0, 0, 0, 0.07); color: #555555; }
+.pill-completed { background: rgba(0, 0, 0, 0.05); color: #888888; }
+.pill-unassigned { background: rgba(0, 0, 0, 0.05); color: #888888; }
+
+/* Confetti burst shown when a task is marked Completed */
+.confetti-piece {
+    position: fixed;
+    top: -12px;
+    width: 9px;
+    height: 14px;
+    border-radius: 2px;
+    opacity: 0.9;
+    z-index: 9999;
+    pointer-events: none;
+    animation-name: confetti-fall;
+    animation-timing-function: linear;
+    animation-iteration-count: 1;
+}
+@keyframes confetti-fall {
+    0%   { transform: translateY(-12px) rotateZ(0deg); opacity: 1; }
+    100% { transform: translateY(105vh) rotateZ(720deg); opacity: 0; }
+}
+
+/* ============================================================
+   NIGHT MODE — warm off-white / cream (toggled by `.dark` on <html>).
+   This is a *light* theme: soft cream canvas, near-black warm text.
+   The templates use light Tailwind utilities, so we recolour surfaces here.
+   ============================================================ */
+html.dark body { background-color: #f4f1ea; color: #2b2b2b; }
+
+/* Canvas / page backgrounds */
+html.dark .bg-gray-50,
+html.dark .bg-gray-50\/50,
+html.dark .bg-gray-50\/30,
+html.dark .bg-gray-50\/20 { background-color: #f4f1ea !important; }
+
+/* Elevated surfaces: cards, header, modals, dropdowns (lighter warm white) */
+html.dark .bg-white { background-color: #fdfbf6 !important; }
+
+/* Translucent surfaces (frosted header bar uses bg-white/80) */
+html.dark .bg-white\/80 { background-color: rgba(253, 251, 246, 0.82) !important; }
+html.dark .bg-white\/90 { background-color: rgba(253, 251, 246, 0.92) !important; }
+
+/* Chips / subtle fills */
+html.dark .bg-gray-100 { background-color: #e9e3d6 !important; }
+
+/* Tinted accent fills/hovers — warm neutral on cream */
+html.dark .bg-accent-light { background-color: #ece5d8 !important; }
+html.dark .hover\:bg-accent-light:hover { background-color: #e3dccb !important; }
+
+/* Primary text */
+html.dark .text-gray-900,
+html.dark .text-gray-850,
+html.dark .text-gray-800,
+html.dark .text-gray-750,
+html.dark .text-gray-700,
+html.dark .text-gray-700\/90,
+html.dark .text-gray-650 { color: #2b2b2b !important; }
+
+/* Secondary / muted text */
+html.dark .text-gray-600,
+html.dark .text-gray-605,
+html.dark .text-gray-500 { color: #6f685c !important; }
+html.dark .text-gray-400 { color: #9a9282 !important; }
+
+/* Borders */
+html.dark .border,
+html.dark .border-t,
+html.dark .border-b,
+html.dark .border-gray-100,
+html.dark .border-gray-150,
+html.dark .border-gray-200 { border-color: #e2dbcd !important; }
+
+/* Table header rows + hover */
+html.dark thead tr.bg-gray-50 { background-color: #efe9dd !important; }
+html.dark .hover\:bg-gray-50:hover,
+html.dark .hover\:bg-gray-50\/50:hover { background-color: #ece5d8 !important; }
+
+/* Form controls */
+html.dark input,
+html.dark select,
+html.dark textarea {
+    background-color: #fdfbf6 !important;
+    color: #2b2b2b !important;
+    border-color: #e2dbcd !important;
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder { color: #9a9282 !important; }
+
+/* Sidebar (cream) */
+html.dark .app-sidebar { background: rgba(236, 230, 219, 0.85) !important; border-right-color: #e0d8ca !important; }
+html.dark .app-sidebar .brand-title { color: #2b2b2b; }
+html.dark .nav-link { color: #4a4439; }
+html.dark .nav-link i { color: #8a8270; }
+html.dark .nav-link:hover { background: rgba(0, 0, 0, 0.05); }
+html.dark .nav-link.active { background: rgba(0, 0, 0, 0.07); color: #1f1b14; }
+html.dark .nav-link.active i { color: #2b2b2b; }
+
+/* Kanban + cards (cream) */
+html.dark .kanban-col { background: rgba(0, 0, 0, 0.03); border-color: #e2dbcd; }
+html.dark .kanban-col.drag-over { background: rgba(0, 0, 0, 0.05); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.45); }
+html.dark .kanban-card { background: #fdfbf6; border-color: #e7e0d2; }
+html.dark .kanban-card:hover { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1); }
+html.dark .app-card { background: #fdfbf6; border-color: #e7e0d2; }
+html.dark .app-card:hover { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.1); }
+
+/* Pills (cream) — warm greyscale text */
+html.dark .pill-working { color: #2b2b2b; }
+html.dark .pill-pending { color: #6f685c; }
+html.dark .pill-completed { color: #948c7e; }
+html.dark .pill-unassigned { color: #948c7e; }
+
+/* Soft elevation on the cream canvas */
+html.dark .shadow-sm,
+html.dark .shadow,
+html.dark .shadow-md { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important; }

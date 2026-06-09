@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EasiOffice</title>
+    <!-- Vendored locally so the app works on an isolated/offline LAN (no CDN dependency) -->
+    <!-- Tailwind CSS -->
+    <script src="/static/vendor/tailwindcss.js"></script>
+    <link href="/static/styles.css" rel="stylesheet">
+    <!-- Vue.js (production build) -->
+    <script src="/static/vendor/vue.global.prod.js"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: 'var(--color-primary, #1E3A8A)',
+                        'primary-hover': 'var(--color-primary-hover, #1D4ED8)',
+                        'primary-light': 'var(--color-primary-light, #EFF6FF)',
+                        accent: 'var(--color-accent, #3B82F6)',
+                        'accent-hover': 'var(--color-accent-hover, #2563EB)',
+                        'accent-light': 'var(--color-accent-light, #EFF6FF)',
+                        goingon: 'var(--color-goingon, #3B82F6)',
+                        completed: 'var(--color-completed, #10B981)',
+                        stuck: 'var(--color-stuck, #EF4444)'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 font-sans text-gray-800 antialiased">
+    <div id="app" class="flex h-screen overflow-hidden" v-cloak @click="showPaletteDropdown = false">
+        
+        <!-- 1. LOGIN OVERLAY SCREEN -->
+        <div v-if="!isLoggedIn" class="min-h-screen w-full flex items-center justify-center p-4 z-50" style="background: linear-gradient(160deg, #f7f7f7 0%, #efefef 50%, #e7e7e7 100%);">
+            <!-- Clean Apple-style Login Card -->
+            <div class="w-full max-w-sm rounded-3xl border border-black/5 p-9 flex flex-col animate-fade-in" style="background:#ffffff; box-shadow: 0 24px 64px rgba(0,0,0,0.12);">
+                <div class="flex flex-col items-center mb-8">
+                    <div class="w-16 h-16 rounded-[20px] flex items-center justify-center text-white text-2xl shadow-lg mb-4" style="background: linear-gradient(160deg, var(--color-accent), var(--color-primary));">
+                        <i class="fa-solid fa-briefcase"></i>
+                    </div>
+                    <h1 class="text-[26px] font-semibold tracking-tight text-gray-900">EasiOffice</h1>
+                    <p class="text-[14px] text-gray-400 mt-1">Office Management for CA Firms</p>
+                </div>
+
+                <form @submit.prevent="handleLogin" class="space-y-4">
+                    <div>
+                        <label class="block text-[13px] font-semibold text-gray-600 mb-1.5">Username</label>
+                        <div class="relative">
+                            <i class="fa-solid fa-user absolute left-4 top-1/2 -translate-y-1/2 text-gray-300"></i>
+                            <input v-model="loginForm.username" type="text" placeholder="Enter username" required class="pl-11 pr-4 py-3 w-full text-[15px] border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent text-gray-800 placeholder-gray-400" style="background:#f5f5f7;">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[13px] font-semibold text-gray-600 mb-1.5">Password</label>
+                        <div class="relative">
+                            <i class="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-gray-300"></i>
+                            <input v-model="loginForm.password" type="password" placeholder="Enter password" required class="pl-11 pr-4 py-3 w-full text-[15px] border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent text-gray-800 placeholder-gray-400" style="background:#f5f5f7;">
+                        </div>
+                    </div>
+
+                    <div v-if="loginError" class="p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-[13px] flex items-center gap-2">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <span>{{ loginError }}</span>
+                    </div>
+
+                    <button type="submit" class="w-full text-white font-semibold py-3.5 px-4 rounded-xl text-[15px] transition flex items-center justify-center gap-2 mt-2 hover:opacity-95 shadow-lg" style="background: var(--color-primary);">
+                        <i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 2. MAIN APPLICATION WORKSPACE -->
+        <template v-else>
+            <!-- macOS-style Collapsible Sidebar -->
+            <aside class="app-sidebar flex flex-col z-20 transition-all duration-300 ease-in-out shrink-0"
+                   :class="isSidebarCollapsed ? 'collapsed w-[4.25rem]' : 'w-[13.5rem]'">
+                <div class="h-16 flex items-center px-4 transition-all"
+                     :class="isSidebarCollapsed ? 'justify-center' : 'justify-start gap-2.5'">
+                    <div class="w-8 h-8 rounded-[9px] flex items-center justify-center text-white shrink-0 shadow-sm" style="background: linear-gradient(160deg, var(--color-accent), var(--color-primary));">
+                        <i class="fa-solid fa-briefcase text-sm"></i>
+                    </div>
+                    <h1 v-show="!isSidebarCollapsed" class="brand-title text-[17px] font-semibold tracking-tight truncate">EasiOffice</h1>
+                </div>
+                <nav class="flex-1 px-2.5 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
+                    <a href="#" @click="currentTab = 'dashboard'" class="nav-link" :class="{ active: currentTab === 'dashboard' }" :title="isSidebarCollapsed ? 'Dashboard' : ''">
+                        <i class="fa-solid fa-gauge-high"></i>
+                        <span v-show="!isSidebarCollapsed">Dashboard</span>
+                    </a>
+                    <a href="#" @click="currentTab = 'tasks'" class="nav-link" :class="{ active: currentTab === 'tasks' }" :title="isSidebarCollapsed ? 'Tasks' : ''">
+                        <i class="fa-solid fa-list-check"></i>
+                        <span v-show="!isSidebarCollapsed">Tasks</span>
+                    </a>
+                    <a href="#" @click="currentTab = 'clients'" class="nav-link" :class="{ active: currentTab === 'clients' }" :title="isSidebarCollapsed ? 'Clients' : ''">
+                        <i class="fa-solid fa-user-group"></i>
+                        <span v-show="!isSidebarCollapsed">Clients</span>
+                    </a>
+                    <a href="#" @click="currentTab = 'services'" class="nav-link" :class="{ active: currentTab === 'services' }" :title="isSidebarCollapsed ? 'Services' : ''">
+                        <i class="fa-solid fa-layer-group"></i>
+                        <span v-show="!isSidebarCollapsed">Services</span>
+                    </a>
+                    <a href="#" v-if="currentUser.role === 'Admin'" @click="currentTab = 'users'" class="nav-link" :class="{ active: currentTab === 'users' }" :title="isSidebarCollapsed ? 'Users' : ''">
+                        <i class="fa-solid fa-user-shield"></i>
+                        <span v-show="!isSidebarCollapsed">Users</span>
+                    </a>
+                    <a href="#" @click="currentTab = 'timesheet'" class="nav-link" :class="{ active: currentTab === 'timesheet' }" :title="isSidebarCollapsed ? 'Time Sheet' : ''">
+                        <i class="fa-regular fa-clock"></i>
+                        <span v-show="!isSidebarCollapsed">Time Sheet</span>
+                    </a>
+                    <a href="#" @click="currentTab = 'reports'" class="nav-link" :class="{ active: currentTab === 'reports' }" :title="isSidebarCollapsed ? 'Reports' : ''">
+                        <i class="fa-solid fa-chart-line"></i>
+                        <span v-show="!isSidebarCollapsed">Reports</span>
+                    </a>
+                    <a href="#" @click="currentTab = 'activity'" class="nav-link" :class="{ active: currentTab === 'activity' }" :title="isSidebarCollapsed ? 'Activity Log' : ''">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        <span v-show="!isSidebarCollapsed">Activity Log</span>
+                    </a>
+                </nav>
+                <div class="p-2.5 border-t border-black/5 flex flex-col gap-2.5">
+                    <button @click="handleLogout" class="w-full py-2 rounded-[10px] text-sm font-medium text-red-500 hover:bg-red-500/10 transition flex items-center justify-center gap-2" :title="isSidebarCollapsed ? 'Logout' : ''">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                        <span v-show="!isSidebarCollapsed">Sign Out</span>
+                    </button>
+                    <div v-show="!isSidebarCollapsed" class="flex flex-col gap-0.5 px-1.5 pb-1 animate-fade-in">
+                        <span class="text-[13px] text-gray-700 font-semibold truncate">{{ currentUser.full_name }}</span>
+                        <span class="text-[11px] text-gray-400 flex items-center gap-1 font-medium">
+                            <i class="fa-solid fa-lock text-[10px]"></i> AES-256 encrypted
+                        </span>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <div class="flex-1 flex flex-col h-screen overflow-hidden">
+                
+                <!-- Header -->
+                <header class="h-16 bg-white/80 backdrop-blur-xl border-b border-gray-150 flex items-center justify-between px-7 z-10">
+                    <div class="flex items-center gap-3">
+                        <!-- macOS-style sidebar show/hide toggle -->
+                        <button @click="isSidebarCollapsed = !isSidebarCollapsed" class="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition" title="Show / hide sidebar">
+                            <i class="fa-solid fa-table-columns text-[17px]"></i>
+                        </button>
+                        <h2 class="text-[22px] font-semibold text-gray-800 tracking-tight">{{ tabTitle }}</h2>
+                    </div>
+                    <div class="flex items-center gap-2.5">
+                        <!-- Single-tap Light / Dark mode toggle -->
+                        <button @click="toggleDark" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" class="flex items-center justify-center w-9 h-9 hover:bg-gray-100 rounded-full text-gray-600 transition">
+                            <i class="fa-solid text-[17px]" :class="isDark ? 'fa-sun text-gray-600' : 'fa-moon text-gray-600'"></i>
+                        </button>
+                        <!-- Theme Swatch Palette Selector -->
+                        <div class="relative">
+                            <button @click.stop="showPaletteDropdown = !showPaletteDropdown" class="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded-full text-sm font-medium text-gray-600 transition" title="Select Theme Palette">
+                                <i class="fa-solid fa-palette text-accent text-[15px]"></i>
+                                <span class="hidden sm:inline">Theme</span>
+                            </button>
+                            <div v-if="showPaletteDropdown" class="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-2xl shadow-xl z-30 py-2 animate-fade-in">
+                                <div class="px-4 py-1.5 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Color Palette</div>
+                                <button v-for="(pal, key) in palettes" :key="key" @click="changePalette(key)" class="w-full text-left px-4 py-3 hover:bg-gray-50 transition flex items-center justify-between group">
+                                    <div class="flex flex-col gap-0.5">
+                                        <span class="text-[13px] font-semibold text-gray-800 group-hover:text-accent">{{ pal.name }}</span>
+                                        <div class="flex items-center gap-1.5 mt-1.5">
+                                            <span class="w-4 h-4 rounded-full border border-black/5" :style="{ backgroundColor: pal.primary }"></span>
+                                            <span class="w-4 h-4 rounded-full border border-black/5" :style="{ backgroundColor: pal.accent }"></span>
+                                            <span class="w-4 h-4 rounded-full border border-black/5" :style="{ backgroundColor: pal.accentLight }"></span>
+                                        </div>
+                                    </div>
+                                    <i v-if="currentPalette === key" class="fa-solid fa-circle-check text-green-500 text-sm"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2.5 pl-2 ml-1 border-l border-gray-200">
+                            <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-[13px] font-semibold shadow-sm" style="background: linear-gradient(160deg, var(--color-accent), var(--color-primary));">
+                                {{ currentUser.full_name ? currentUser.full_name[0] : '?' }}
+                            </div>
+                            <div class="hidden sm:flex flex-col leading-tight">
+                                <span class="text-[13px] font-semibold text-gray-800">{{ currentUser.full_name }}</span>
+                                <span class="text-[11px] text-gray-400 font-medium">{{ currentUser.role }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Inner Scroll Container -->
+                <div class="flex-1 overflow-y-auto bg-gray-50/50">
+                    
+                    <!-- 1. DASHBOARD TAB — Kanban Board -->
+                    <main v-if="currentTab === 'dashboard'" class="p-7 h-full flex flex-col">
+                        <!-- Board intro + active timer -->
+                        <div class="flex items-center justify-between mb-5 shrink-0">
+                            <p class="text-[15px] text-gray-500">
+                                {{ currentUser.role === 'Admin' ? 'Drag cards across columns to assign or update status.' : 'Drag your tasks across columns to update their status.' }}
+                            </p>
+                            <div v-if="activeTimer" class="flex items-center gap-3 bg-white app-card px-4 py-2">
+                                <span class="text-[13px] text-gray-500 font-medium truncate max-w-[220px]"><i class="fa-solid fa-stopwatch text-accent mr-1.5"></i>{{ activeTimer.label }}</span>
+                                <span class="font-mono font-semibold text-gray-800 text-[15px]">{{ elapsedDisplay }}</span>
+                                <button @click="stopTimer()" class="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white transition" style="background: var(--color-stuck);">
+                                    <i class="fa-solid fa-stop text-[11px] mr-1"></i> Stop
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Kanban Columns -->
+                        <div class="flex gap-5 flex-1 min-h-0 overflow-x-auto pb-2">
+                            <div v-for="col in boardColumns" :key="col.key"
+                                 class="kanban-col flex flex-col flex-1 min-w-[270px]"
+                                 :class="{ 'drag-over': dragOverColumn === col.key }"
+                                 @dragover.prevent="onColumnDragOver(col.key)"
+                                 @dragenter.prevent="onColumnDragOver(col.key)"
+                                 @dragleave="onColumnDragLeave(col.key)"
+                                 @drop.prevent="onColumnDrop(col.key)">
+                                <!-- Column header -->
+                                <div class="flex items-center justify-between px-4 pt-4 pb-3 shrink-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-2.5 h-2.5 rounded-full" :style="{ backgroundColor: col.accent }"></span>
+                                        <h3 class="text-[15px] font-semibold text-gray-800">{{ col.label }}</h3>
+                                    </div>
+                                    <span class="text-[13px] font-semibold text-gray-400 bg-black/5 rounded-full px-2.5 py-0.5">{{ col.tasks.length }}</span>
+                                </div>
+                                <!-- Column body -->
+                                <div class="flex-1 overflow-y-auto px-3 pb-3 space-y-3">
+                                    <div v-for="task in col.tasks" :key="task.id"
+                                         class="kanban-card p-3.5"
+                                         :class="['rail-' + col.key.toLowerCase(), { dragging: draggedTaskId === task.id }]"
+                                         draggable="true"
+                                         @dragstart="onTaskDragStart(task, $event)"
+                                         @dragend="onTaskDragEnd">
+                                        <div class="flex items-start justify-between gap-2">
+                                            <div class="font-semibold text-[15px] text-gray-800 leading-snug">{{ task.client_name }}</div>
+                                            <button v-if="currentUser.role === 'Admin'" @click="startEditTask(task)" class="text-gray-400 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg transition shrink-0" title="Edit task">
+                                                <i class="fa-solid fa-pen text-[12px]"></i>
+                                            </button>
+                                        </div>
+                                        <div class="mt-1.5 inline-flex items-center bg-gray-100 text-gray-600 px-2.5 py-1 rounded-md text-[12.5px] font-medium">
+                                            {{ task.service_name }}
+                                        </div>
+                                        <div class="mt-3 flex items-center justify-between text-[13px] text-gray-500">
+                                            <span class="font-medium">{{ task.financial_year }} · {{ task.period }}</span>
+                                            <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
+                                        </div>
+                                        <div class="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                                            <span class="text-[12.5px] text-gray-500 inline-flex items-center gap-1.5 truncate">
+                                                <i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}
+                                            </span>
+                                            <button v-if="!activeTimer || activeTimer.taskId !== task.id" @click="startTimer(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-gray-600 hover:text-white hover:bg-accent transition inline-flex items-center gap-1.5 border border-gray-200 shrink-0">
+                                                <i class="fa-solid fa-play text-[10px]"></i> Start
+                                            </button>
+                                            <button v-else @click="stopTimer()" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-white inline-flex items-center gap-1.5 shrink-0" style="background: var(--color-stuck);">
+                                                <i class="fa-solid fa-stop text-[10px]"></i> {{ elapsedDisplay }}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div v-if="col.tasks.length === 0" class="text-center py-10 text-[13px] text-gray-300 select-none">
+                                        <i class="fa-regular fa-square-check text-2xl block mb-2 opacity-50"></i>
+                                        Drop tasks here
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+
+                    <!-- 2. TASKS TAB -->
+                    <main v-if="currentTab === 'tasks'" class="p-8 space-y-6 max-w-7xl mx-auto">
+                        <!-- Task Bar Header -->
+                        <div class="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-5 rounded-2xl border border-gray-150 shadow-sm">
+                            <!-- Filters -->
+                            <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                                <div class="relative w-full sm:w-64">
+                                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                    <input v-model="taskSearch" type="text" placeholder="Search tasks by Client/Service..." class="pl-10 pr-4 py-2 w-full text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+                                </div>
+                                <select v-model="taskStatusFilter" class="px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary bg-white">
+                                    <option value="All">All Statuses</option>
+                                    <option value="Working">Working</option>
+                                    <option value="Pending">Pending</option>
+                                    <option value="Completed">Completed</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Action Buttons: create client / single task rights conditionally visible to Admin only -->
+                            <div class="flex items-center gap-2 w-full md:w-auto justify-end">
+                                <button v-if="currentUser.role === 'Admin'" @click="showBulkEngine = !showBulkEngine" class="px-4 py-2 text-sm font-semibold border border-primary text-primary hover:bg-blue-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-bolt"></i> Bulk Engine
+                                </button>
+                                <button v-if="currentUser.role === 'Admin'" @click="showTaskModal = true" class="px-4 py-2 text-sm font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-plus"></i> Create Task
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Collapsible Bulk Engine Panel -->
+                        <div v-if="showBulkEngine && currentUser.role === 'Admin'" class="bg-gray-900 text-white rounded-2xl shadow-lg p-6 border border-gray-800 relative overflow-hidden transition-all duration-300">
+                            <div class="relative z-10 max-w-2xl">
+                                <h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-bolt text-white"></i> Generate Bulk Tasks</h3>
+                                <p class="text-gray-300 text-sm mt-1 mb-5">Instantly auto-generate a compliance task for all registered clients using a service template.</p>
+
+                                <form @submit.prevent="generateBulkTasks" class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Service Template</label>
+                                        <select v-model="bulkForm.service_id" required class="w-full rounded-xl border-none bg-white/10 p-2.5 text-sm text-white focus:ring-2 focus:ring-white/40">
+                                            <option disabled value="">Select a service...</option>
+                                            <option v-for="srv in services" :key="srv.id" :value="srv.id">{{ srv.name }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Financial Year</label>
+                                        <input v-model="bulkForm.financial_year" type="text" placeholder="e.g. 2025-26" required pattern="20[0-9]{2}-[0-9]{2}" title="Financial Year must match format YYYY-YY (e.g. 2025-26)" class="w-full rounded-xl border-none bg-white/10 p-2.5 text-sm text-white focus:ring-2 focus:ring-white/40">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Period / Month</label>
+                                        <input v-model="bulkForm.period" type="text" placeholder="e.g. May" required class="w-full rounded-xl border-none bg-white/10 p-2.5 text-sm text-white focus:ring-2 focus:ring-white/40">
+                                    </div>
+                                    <div class="sm:col-span-3 flex justify-end gap-2 mt-2">
+                                        <button type="button" @click="showBulkEngine = false" class="px-4 py-2 text-xs font-bold text-gray-300 hover:text-white transition">Cancel</button>
+                                        <button type="submit" class="bg-white hover:bg-gray-200 text-gray-900 font-bold py-2 px-5 rounded-xl text-xs shadow-md transition duration-200">
+                                            Generate Active Tasks
+                                        </button>
+                                    </div>
+                                </form>
+                                
+                                <div v-if="bulkMessage" class="mt-4 p-3 bg-green-500/20 border border-green-500/30 text-green-300 rounded-xl text-xs flex items-center">
+                                    <i class="fa-solid fa-circle-check mr-2 text-green-400"></i> {{ bulkMessage }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tasks Card Grid -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 animate-fade-in">
+                            <div v-for="task in filteredTasks" :key="task.id" class="app-card p-5 flex flex-col gap-3"
+                                 :class="'rail-' + columnKeyOf(task).toLowerCase()">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <div class="font-semibold text-[16px] text-gray-800 leading-snug truncate">{{ task.client_name }}</div>
+                                        <div class="mt-1.5 inline-flex items-center bg-gray-100 text-gray-600 px-2.5 py-1 rounded-md text-[13px] font-medium">{{ task.service_name }}</div>
+                                    </div>
+                                    <span v-if="task.assigned_to" class="pill shrink-0" :class="{'pill-working':task.status==='Working','pill-pending':task.status==='Pending','pill-completed':task.status==='Completed'}">{{ task.status }}</span>
+                                    <span v-else class="pill pill-unassigned shrink-0">Unassigned</span>
+                                </div>
+
+                                <div class="flex items-center justify-between text-[13.5px] text-gray-500">
+                                    <span class="font-medium">{{ task.financial_year }} · {{ task.period }}</span>
+                                    <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
+                                </div>
+
+                                <div class="pt-3 border-t border-gray-100 space-y-2.5">
+                                    <span class="text-[12px] font-semibold text-gray-400 uppercase tracking-wide block">Assigned Staff</span>
+                                    <!-- Admin: assign + status -->
+                                    <div v-if="currentUser.role === 'Admin'" class="flex items-center gap-2">
+                                        <select v-model="task.assigned_to" @change="assignTask(task, task.assigned_to)" title="Assign this task to a staff member" class="flex-1 min-w-0 rounded-lg border border-gray-200 px-2.5 py-2 text-[14px] bg-white focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer">
+                                            <option :value="null">— Unassigned —</option>
+                                            <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+                                        </select>
+                                        <select v-model="task.status" @change="updateTaskStatus(task.id, task.status)" title="Change status" class="rounded-lg border border-gray-200 px-2.5 py-2 text-[14px] bg-white focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer">
+                                            <option value="Working">Working</option>
+                                            <option value="Pending">Pending</option>
+                                            <option value="Completed">Completed</option>
+                                        </select>
+                                        <button @click="startEditTask(task)" class="p-2 rounded-lg text-gray-400 hover:text-accent hover:bg-accent-light transition shrink-0" title="Edit task"><i class="fa-solid fa-pen text-[13px]"></i></button>
+                                    </div>
+                                    <!-- Employee: status only -->
+                                    <div v-else class="flex items-center justify-between gap-2">
+                                        <span class="text-[14px] text-gray-600 inline-flex items-center gap-1.5 truncate"><i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}</span>
+                                        <select v-model="task.status" @change="updateTaskStatus(task.id, task.status)" class="rounded-lg border border-gray-200 px-2.5 py-2 text-[14px] bg-white focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer shrink-0">
+                                            <option value="Working">Working</option>
+                                            <option value="Pending">Pending</option>
+                                            <option value="Completed">Completed</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-if="filteredTasks.length === 0" class="col-span-full text-center py-14 text-gray-400 italic app-card">No tasks found matching filters.</div>
+                        </div>
+                    </main>
+
+                    <!-- 3. CLIENTS TAB — Cards only -->
+                    <main v-if="currentTab === 'clients'" class="p-7 space-y-6 max-w-7xl mx-auto">
+                        <!-- Header Action Bar -->
+                        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <div class="relative w-full sm:w-96">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                <input v-model="clientSearch" type="text" placeholder="Search clients by name, PAN, group..." class="pl-10 pr-4 py-2.5 w-full text-[15px] rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+                            </div>
+                            <button v-if="currentUser.role === 'Admin'" @click="showClientModal = true" class="px-5 py-2.5 font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] w-full sm:w-auto">
+                                <i class="fa-solid fa-plus"></i> Add Client
+                            </button>
+                        </div>
+
+                        <!-- Clients Card Grid -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 animate-fade-in">
+                            <div v-for="client in paginatedClients" :key="client.id" class="app-card p-5 flex flex-col gap-4">
+                                <div class="flex items-start justify-between">
+                                    <div class="flex items-center gap-3 min-w-0">
+                                        <div class="w-11 h-11 rounded-full text-white font-semibold flex items-center justify-center uppercase text-[17px] shrink-0" style="background: linear-gradient(160deg, var(--color-accent), var(--color-primary));">{{ client.name ? client.name[0] : '?' }}</div>
+                                        <div class="min-w-0">
+                                            <div class="font-semibold text-[16px] text-gray-800 leading-tight truncate">{{ client.name }}</div>
+                                            <span class="inline-block mt-1 bg-accent-light text-accent px-2 py-0.5 rounded-md text-[12px] font-semibold">{{ client.group_name || 'Individual' }}</span>
+                                        </div>
+                                    </div>
+                                    <button v-if="currentUser.role === 'Admin'" @click="startEditClient(client)" class="text-gray-400 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg transition shrink-0" title="Edit client"><i class="fa-solid fa-pen text-[13px]"></i></button>
+                                </div>
+                                <div class="grid grid-cols-2 gap-y-3 gap-x-2 text-[13.5px] border-t border-gray-100 pt-4">
+                                    <div><span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wide block mb-0.5">Entity</span><span class="text-gray-700 font-medium">{{ client.entity_type }}</span></div>
+                                    <div><span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wide block mb-0.5">PAN</span><span class="text-gray-700 font-mono font-semibold uppercase">{{ client.pan }}</span></div>
+                                    <div><span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wide block mb-0.5">GSTIN</span><span class="text-gray-700 font-mono uppercase">{{ client.gstin || 'N/A' }}</span></div>
+                                    <div><span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wide block mb-0.5">Cabinet</span><span class="text-gray-700"><i class="fa-solid fa-folder-open text-amber-500 mr-1"></i>{{ client.physical_folder_location }}</span></div>
+                                </div>
+                                <div class="flex items-center gap-2 border-t border-gray-100 pt-4">
+                                    <button @click="openContactsForClient(client)" class="flex-1 px-3 py-2 bg-accent-light text-accent hover:bg-accent hover:text-white rounded-lg text-[13.5px] font-semibold transition inline-flex items-center justify-center gap-1.5"><i class="fa-solid fa-address-book"></i> Contacts</button>
+                                    <button @click="openVaultForClient(client)" class="flex-1 px-3 py-2 bg-gray-800 hover:bg-black text-white rounded-lg text-[13.5px] font-semibold transition inline-flex items-center justify-center gap-1.5"><i class="fa-solid fa-key text-[12px]"></i> Vault</button>
+                                </div>
+                            </div>
+                            <div v-if="filteredClients.length === 0" class="col-span-full text-center py-14 text-gray-400 italic app-card">No clients visible to you. (Ensure you have assigned tasks.)</div>
+                        </div>
+
+                        <!-- Pagination -->
+                        <div v-if="filteredClients.length > clientsPerPage" class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <span class="text-[13px] text-gray-500 font-medium">
+                                Showing <span class="font-semibold text-gray-700">{{ (clientPage - 1) * clientsPerPage + 1 }}</span> to
+                                <span class="font-semibold text-gray-700">{{ Math.min(clientPage * clientsPerPage, filteredClients.length) }}</span> of
+                                <span class="font-semibold text-gray-700">{{ filteredClients.length }}</span> clients
+                            </span>
+                            <div class="flex items-center gap-1.5" v-if="totalClientPages > 1">
+                                <button @click="clientPage = Math.max(1, clientPage - 1)" :disabled="clientPage === 1" class="px-3.5 py-1.5 rounded-lg text-[13px] font-semibold transition" :class="clientPage === 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-100'"><i class="fa-solid fa-angle-left mr-1"></i> Prev</button>
+                                <button v-for="p in totalClientPages" :key="p" @click="clientPage = p" class="w-9 h-9 rounded-lg text-[13px] font-semibold transition" :class="clientPage === p ? 'bg-primary text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'">{{ p }}</button>
+                                <button @click="clientPage = Math.min(totalClientPages, clientPage + 1)" :disabled="clientPage === totalClientPages" class="px-3.5 py-1.5 rounded-lg text-[13px] font-semibold transition" :class="clientPage === totalClientPages ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-100'">Next <i class="fa-solid fa-angle-right ml-1"></i></button>
+                            </div>
+                        </div>
+                    </main>
+
+                    <!-- 4. SERVICES CATALOG TAB -->
+                    <main v-if="currentTab === 'services'" class="p-8 space-y-6 max-w-7xl mx-auto">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-800">Compliance Services Catalog</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">Manage custom operational services and launch structured compliance tasks immediately.</p>
+                            </div>
+                            <button v-if="currentUser.role === 'Admin'" @click="showServiceModal = true" class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-folder-plus text-xs"></i> Create Service
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
+                            <div v-for="srv in services" :key="srv.id" class="bg-white rounded-2xl shadow-sm border border-gray-150 p-6 flex flex-col justify-between hover:shadow-md transition duration-300 relative overflow-hidden group border-t-4 border-accent">
+                                <div>
+                                    <div class="flex justify-between items-start mb-3">
+                                        <h4 class="text-base font-bold text-gray-850 truncate max-w-xs leading-snug flex items-center gap-1.5">
+                                            <button v-if="currentUser.role === 'Admin'" @click="startEditService(srv)" class="text-xs text-accent hover:text-accent-hover hover:bg-accent-light p-1 rounded-lg transition" title="Edit Service details">
+                                                <i class="fa-solid fa-pen"></i>
+                                            </button>
+                                            <span>{{ srv.name }}</span>
+                                        </h4>
+                                        <div class="flex flex-col items-end gap-1">
+                                            <span class="bg-accent-light border border-accent/20 text-accent px-2 py-0.5 rounded text-[10px] font-bold">Catalog</span>
+                                            <span class="text-[9px] text-gray-400 font-mono">Due Day: <strong class="text-accent">{{ srv.default_due_day || 15 }}</strong></span>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs text-gray-500 leading-relaxed font-medium mb-4">{{ srv.description || 'No description notes.' }}</p>
+                                    
+                                    <!-- Checklist items display -->
+                                    <div class="space-y-2 border-t pt-4 mb-5">
+                                        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block"><i class="fa-solid fa-list-check mr-1 text-primary"></i> Checklist steps</span>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            <span v-for="item in parseChecklist(srv.checklist_json)" :key="item" class="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg text-[10px] font-semibold">
+                                                {{ item }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Launch single task shortcut for this template (Admin only) -->
+                                <div class="border-t pt-3 flex justify-end">
+                                    <button v-if="currentUser.role === 'Admin'" @click="launchTaskFromService(srv)" class="px-4 py-2 bg-accent-light hover:bg-accent text-accent hover:text-white border border-accent/25 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                                        <i class="fa-solid fa-bolt text-[10px]"></i> Launch Task
+                                    </button>
+                                    <span v-else class="text-[10px] text-gray-400 italic font-medium"><i class="fa-solid fa-check mr-1 text-green-500"></i> Catalog Verified</span>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+
+                    <!-- 5. USERS TAB (Admin only) -->
+                    <main v-if="currentTab === 'users' && currentUser.role === 'Admin'" class="p-8 space-y-6 max-w-5xl mx-auto">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-800">Firm Personnel Directory</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">Manage personnel accounts, user names, and operational roles for access control.</p>
+                            </div>
+                            <button @click="showUserModal = true" class="px-4 py-2 bg-primary hover:bg-blue-800 text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1">
+                                <i class="fa-solid fa-plus text-xs"></i> Add Staff
+                            </button>
+                        </div>
+
+                        <!-- Staff Directory List -->
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 text-xs font-bold uppercase tracking-wider">
+                                        <th class="py-3.5 px-6">Full Name</th>
+                                        <th class="py-3.5 px-6">Username</th>
+                                        <th class="py-3.5 px-6">Access Role</th>
+                                        <th class="py-3.5 px-6 text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-50 text-sm">
+                                    <tr v-for="usr in usersList" :key="usr.id" class="hover:bg-gray-50/50 transition animate-fade-in">
+                                        <td class="py-4 px-6 flex items-center gap-3">
+                                            <div class="w-9 h-9 rounded-full bg-blue-50 text-primary font-bold flex items-center justify-center border border-blue-100">
+                                                {{ usr.full_name[0] }}
+                                            </div>
+                                            <span class="font-bold text-gray-800">{{ usr.full_name }}</span>
+                                        </td>
+                                        <td class="py-4 px-6 font-mono text-xs text-gray-600 font-semibold">{{ usr.username }}</td>
+                                        <td class="py-4 px-6">
+                                            <span class="px-2.5 py-0.5 rounded text-xs font-bold"
+                                                  :class="usr.role === 'Admin' ? 'bg-indigo-50 text-indigo-700 border border-indigo-150' : 'bg-gray-100 text-gray-600'">
+                                                {{ usr.role }}
+                                            </span>
+                                        </td>
+                                        <td class="py-4 px-6 text-center whitespace-nowrap">
+                                            <!-- Edit staff details pencil (Admin only) -->
+                                            <button @click="startEditUser(usr)" class="text-xs text-indigo-650 hover:text-indigo-800 font-bold transition hover:underline mr-4" title="Edit Staff account">
+                                                <i class="fa-solid fa-pen mr-1"></i> Edit
+                                            </button>
+                                            <button @click="deleteUser(usr)" class="text-xs text-red-500 hover:text-red-700 font-bold transition hover:underline" :disabled="usr.username === 'admin'">
+                                                <i class="fa-solid fa-trash-can mr-1"></i> Delete
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </main>
+
+                    <!-- 6. TIMESHEET TAB -->
+                    <main v-if="currentTab === 'timesheet'" class="p-8 max-w-7xl mx-auto space-y-8">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <!-- Left Panel: Log New Sheet -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-150 p-6 self-start lg:col-span-1 border-t-4 border-primary">
+                                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
+                                    <i class="fa-solid fa-square-plus text-primary"></i> File Timesheet
+                                </h3>
+                                <form @submit.prevent="logTimesheet" class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Date</label>
+                                        <input v-model="tsForm.log_date" type="date" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Task Performed</label>
+                                        <select v-model="tsForm.task_id" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white text-gray-700">
+                                            <option disabled value="">Select task in progress...</option>
+                                            <option v-for="t in filteredTasks" :key="t.id" :value="t.id">
+                                                {{ t.client_name }} - {{ t.service_name }} ({{ t.period }})
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Hours</label>
+                                            <input v-model.number="tsForm.hours" type="number" min="0" max="23" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono text-center">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Minutes</label>
+                                            <input v-model.number="tsForm.minutes" type="number" min="0" max="59" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono text-center">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Details / Work Description</label>
+                                        <textarea v-model="tsForm.description" placeholder="E.g., verified ledger balances, completed income statements..." required rows="4" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary resize-none"></textarea>
+                                    </div>
+                                    <button type="submit" class="w-full bg-primary hover:bg-primary-hover text-white font-bold py-3 px-4 rounded-xl text-sm transition duration-200 shadow-md flex items-center justify-center gap-1.5">
+                                        <i class="fa-solid fa-circle-check"></i> Submit Logs
+                                    </button>
+                                </form>
+                            </div>
+
+                            <!-- Right Panel: Logs History -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden lg:col-span-2">
+                                <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                                    <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                        <i class="fa-solid fa-book-open text-primary"></i> Timesheet Records Log
+                                    </h3>
+                                    <span class="text-xs font-bold text-gray-400 uppercase bg-white border px-2 py-0.5 rounded shadow-sm">
+                                        Role: {{ currentUser.role }} view
+                                    </span>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 text-xs font-bold uppercase tracking-wider">
+                                                <th class="py-3.5 px-6">Date</th>
+                                                <th class="py-3.5 px-6">Logged By</th>
+                                                <th class="py-3.5 px-6">Client & Service Task</th>
+                                                <th class="py-3.5 px-6">Duration</th>
+                                                <th class="py-3.5 px-6">Work Description</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-50 text-sm">
+                                            <tr v-for="ts in filteredTimesheets" :key="ts.id" class="hover:bg-gray-50/50 transition align-top">
+                                                <td class="py-4 px-6 font-semibold text-gray-700 whitespace-nowrap"><i class="fa-solid fa-calendar-days text-gray-400 mr-1.5"></i>{{ ts.log_date }}</td>
+                                                <td class="py-4 px-6 font-bold text-gray-800">{{ ts.employee_name }}</td>
+                                                <td class="py-4 px-6 whitespace-nowrap">
+                                                    <div class="font-bold text-gray-800">{{ ts.client_name }}</div>
+                                                    <span class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[10px] font-bold">{{ ts.service_name }}</span>
+                                                </td>
+                                                <td class="py-4 px-6 font-bold text-primary font-mono whitespace-nowrap">{{ ts.hours }}h {{ ts.minutes }}m</td>
+                                                <td class="py-4 px-6 text-gray-500 font-medium text-xs leading-relaxed max-w-xs break-words">{{ ts.description }}</td>
+                                            </tr>
+                                            <tr v-if="filteredTimesheets.length === 0">
+                                                <td colspan="5" class="py-12 text-center text-gray-400 italic">No timesheet records recorded yet.</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+
+                    <!-- 6. ACTIVITY LOG TAB -->
+                    <main v-if="currentTab === 'activity'" class="p-8 space-y-6 max-w-7xl mx-auto">
+                        <div class="flex flex-col sm:flex-row items-center justify-between bg-white p-5 rounded-2xl border border-gray-150 shadow-sm gap-4 animate-fade-in">
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                    <i class="fa-solid fa-clock-rotate-left text-accent"></i>
+                                    <span>Personnel Action & Audit Trail</span>
+                                </h3>
+                                <p class="text-xs text-gray-500 mt-0.5">Chronological audit log of all system mutations and vault decryptions. Use this reference to verify billing and timesheets.</p>
+                            </div>
+                            
+                            <!-- Search Logs -->
+                            <div class="relative w-full sm:w-80">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                <input v-model="logSearch" type="text" placeholder="Search logs by action, details, user..." class="pl-10 pr-4 py-2 w-full text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary">
+                            </div>
+                        </div>
+
+                        <!-- Activity Table -->
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden font-sans">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 text-xs font-bold uppercase tracking-wider">
+                                            <th class="py-3.5 px-6">Timestamp</th>
+                                            <th class="py-3.5 px-6">Staff Member</th>
+                                            <th class="py-3.5 px-6">Category / Action</th>
+                                            <th class="py-3.5 px-6">Audited Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-50 text-sm">
+                                        <tr v-for="log in filteredLogs" :key="log.id" class="hover:bg-gray-50/50 transition align-top animate-fade-in">
+                                            <td class="py-4 px-6 font-semibold text-gray-700 whitespace-nowrap">
+                                                <i class="fa-regular fa-clock text-gray-400 mr-1.5"></i>
+                                                {{ log.timestamp }}
+                                            </td>
+                                            <td class="py-4 px-6 font-bold text-gray-800 whitespace-nowrap">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="w-6 h-6 rounded-full bg-accent-light border border-accent/10 text-accent text-[10px] font-black flex items-center justify-center uppercase">
+                                                        {{ log.username ? log.username[0] : 'A' }}
+                                                    </span>
+                                                    <span>{{ log.username }}</span>
+                                                </div>
+                                            </td>
+                                            <td class="py-4 px-6 whitespace-nowrap">
+                                                <span class="px-2.5 py-1 rounded-lg text-xs font-bold border inline-flex items-center gap-1.5 bg-gray-100 text-gray-700 border-gray-200">
+                                                    <i class="fa-solid fa-lock-open text-[9px]" v-if="log.action === 'Vault Password Revealed'"></i>
+                                                    {{ log.action }}
+                                                </span>
+                                            </td>
+                                            <td class="py-4 px-6 text-gray-600 font-medium text-xs leading-relaxed max-w-lg break-words">
+                                                {{ log.details }}
+                                            </td>
+                                        </tr>
+                                        <tr v-if="filteredLogs.length === 0">
+                                            <td colspan="4" class="py-12 text-center text-gray-400 italic">No activity entries found matching search filters.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </main>
+
+                    <!-- 7. REPORTS TAB -->
+                    <main v-if="currentTab === 'reports'" class="p-7 space-y-6 max-w-7xl mx-auto">
+                        <!-- Summary Cards -->
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                            <div class="app-card p-6 rail-working">
+                                <p class="text-[12px] text-gray-400 font-semibold uppercase tracking-wide">Logged Today</p>
+                                <p class="text-3xl font-semibold text-gray-800 mt-1">{{ reportSummary.today }}</p>
+                            </div>
+                            <div class="app-card p-6 rail-completed">
+                                <p class="text-[12px] text-gray-400 font-semibold uppercase tracking-wide">Logged This Month</p>
+                                <p class="text-3xl font-semibold text-gray-800 mt-1">{{ reportSummary.month }}</p>
+                            </div>
+                            <div class="app-card p-6 rail-pending">
+                                <p class="text-[12px] text-gray-400 font-semibold uppercase tracking-wide">Filtered Total ({{ reportSummary.entries }} logs)</p>
+                                <p class="text-3xl font-semibold text-gray-800 mt-1">{{ reportSummary.filtered }}</p>
+                            </div>
+                        </div>
+
+                        <!-- Time-range Filter -->
+                        <div class="app-card p-5 flex flex-wrap items-end gap-4">
+                            <div>
+                                <label class="block text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Time Range</label>
+                                <select v-model="reportRange" class="rounded-xl border border-gray-200 p-2.5 text-[14px] bg-white">
+                                    <option value="daily">Daily</option>
+                                    <option value="monthly">Monthly</option>
+                                    <option value="yearly">Yearly</option>
+                                    <option value="custom">Custom</option>
+                                </select>
+                            </div>
+                            <div v-if="reportRange === 'daily'">
+                                <label class="block text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Date</label>
+                                <input v-model="reportDay" type="date" class="rounded-xl border border-gray-200 p-2.5 text-[14px]">
+                            </div>
+                            <div v-if="reportRange === 'monthly'">
+                                <label class="block text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Month</label>
+                                <input v-model="reportMonth" type="month" class="rounded-xl border border-gray-200 p-2.5 text-[14px]">
+                            </div>
+                            <div v-if="reportRange === 'yearly'">
+                                <label class="block text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Year</label>
+                                <input v-model="reportYear" type="number" min="2000" max="2099" class="rounded-xl border border-gray-200 p-2.5 text-[14px] w-28">
+                            </div>
+                            <template v-if="reportRange === 'custom'">
+                                <div>
+                                    <label class="block text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">From</label>
+                                    <input v-model="reportStart" type="date" class="rounded-xl border border-gray-200 p-2.5 text-[14px]">
+                                </div>
+                                <div>
+                                    <label class="block text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">To</label>
+                                    <input v-model="reportEnd" type="date" class="rounded-xl border border-gray-200 p-2.5 text-[14px]">
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- Three-column aggregations: Client / User / Service -->
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                            <!-- Client-wise -->
+                            <div class="app-card p-5">
+                                <h3 class="text-[15px] font-semibold text-gray-800 flex items-center gap-2 mb-4"><i class="fa-solid fa-user-group text-accent"></i> Client-wise</h3>
+                                <div v-if="reportClientRows.length" class="space-y-3">
+                                    <div v-for="row in reportClientRows" :key="row.name" class="flex items-center justify-between gap-3">
+                                        <span class="text-[14px] text-gray-700 font-medium truncate">{{ row.name }}</span>
+                                        <div class="text-right shrink-0">
+                                            <div class="font-mono text-[13.5px] font-semibold text-gray-800">{{ row.hours }}h {{ row.minutes }}m</div>
+                                            <div class="text-[12px] text-gray-400">{{ row.count }} logs</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div v-else class="text-[13px] text-gray-400 italic py-6 text-center">No data in range.</div>
+                            </div>
+                            <!-- User-wise -->
+                            <div class="app-card p-5">
+                                <h3 class="text-[15px] font-semibold text-gray-800 flex items-center gap-2 mb-4"><i class="fa-solid fa-user-shield text-accent"></i> User-wise</h3>
+                                <div v-if="reportUserRows.length" class="space-y-3">
+                                    <div v-for="row in reportUserRows" :key="row.name" class="flex items-center justify-between gap-3">
+                                        <span class="text-[14px] text-gray-700 font-medium truncate">{{ row.name }}</span>
+                                        <div class="text-right shrink-0">
+                                            <div class="font-mono text-[13.5px] font-semibold text-gray-800">{{ row.hours }}h {{ row.minutes }}m</div>
+                                            <div class="text-[12px] text-gray-400">{{ row.count }} logs</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div v-else class="text-[13px] text-gray-400 italic py-6 text-center">No data in range.</div>
+                            </div>
+                            <!-- Service-wise -->
+                            <div class="app-card p-5">
+                                <h3 class="text-[15px] font-semibold text-gray-800 flex items-center gap-2 mb-4"><i class="fa-solid fa-layer-group text-accent"></i> Service-wise</h3>
+                                <div v-if="reportServiceRows.length" class="space-y-3">
+                                    <div v-for="row in reportServiceRows" :key="row.name" class="flex items-center justify-between gap-3">
+                                        <span class="text-[14px] text-gray-700 font-medium truncate">{{ row.name }}</span>
+                                        <div class="text-right shrink-0">
+                                            <div class="font-mono text-[13.5px] font-semibold text-gray-800">{{ row.hours }}h {{ row.minutes }}m</div>
+                                            <div class="text-[12px] text-gray-400">{{ row.count }} logs</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div v-else class="text-[13px] text-gray-400 italic py-6 text-center">No data in range.</div>
+                            </div>
+                        </div>
+
+                        <!-- Staff Performance drill-down -->
+                        <div class="app-card p-6">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                                <h3 class="text-[17px] font-semibold text-gray-800 flex items-center gap-2"><i class="fa-solid fa-chart-line text-accent"></i> Staff Performance</h3>
+                                <div v-if="currentUser.role === 'Admin'" class="flex items-center gap-2">
+                                    <label class="text-[13px] text-gray-500 font-medium">Staff member</label>
+                                    <select v-model="selectedReportUser" class="rounded-xl border border-gray-200 p-2.5 text-[14px] bg-white min-w-[190px]">
+                                        <option value="">Select a user…</option>
+                                        <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div v-if="userStats">
+                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                                    <div class="rounded-2xl p-4" style="background: rgba(10,132,255,0.10);">
+                                        <p class="text-[12px] font-semibold uppercase tracking-wide" style="color: var(--color-goingon);">Working</p>
+                                        <p class="text-3xl font-semibold text-gray-800 mt-1">{{ userStats.working }}</p>
+                                    </div>
+                                    <div class="rounded-2xl p-4" style="background: rgba(255,149,0,0.12);">
+                                        <p class="text-[12px] font-semibold uppercase tracking-wide" style="color: var(--color-stuck);">Pending</p>
+                                        <p class="text-3xl font-semibold text-gray-800 mt-1">{{ userStats.pending }}</p>
+                                    </div>
+                                    <div class="rounded-2xl p-4" style="background: rgba(52,199,89,0.12);">
+                                        <p class="text-[12px] font-semibold uppercase tracking-wide" style="color: var(--color-completed);">Completed</p>
+                                        <p class="text-3xl font-semibold text-gray-800 mt-1">{{ userStats.completed }}</p>
+                                    </div>
+                                    <div class="rounded-2xl p-4 bg-gray-100">
+                                        <p class="text-[12px] font-semibold uppercase tracking-wide text-gray-500">Time Logged</p>
+                                        <p class="text-2xl font-semibold text-gray-800 mt-1">{{ userStats.timeLogged }}</p>
+                                        <p class="text-[12px] text-gray-400 mt-0.5">{{ userStats.logCount }} entries</p>
+                                    </div>
+                                </div>
+
+                                <div class="border-t border-gray-100 pt-4">
+                                    <h4 class="text-[13px] font-semibold text-gray-400 uppercase tracking-wide mb-3">Time Logs ({{ userStats.logCount }})</h4>
+                                    <div v-if="userStats.logs.length" class="space-y-1 max-h-80 overflow-y-auto pr-1">
+                                        <div v-for="log in userStats.logs" :key="log.id" class="flex items-center justify-between gap-3 py-2.5 border-b border-gray-50">
+                                            <div class="min-w-0">
+                                                <div class="text-[14px] font-medium text-gray-800 truncate">{{ log.client_name }} · {{ log.service_name }}</div>
+                                                <div class="text-[12.5px] text-gray-400 truncate">{{ log.log_date }} — {{ log.description }}</div>
+                                            </div>
+                                            <span class="font-mono text-[13.5px] font-semibold text-accent whitespace-nowrap shrink-0">{{ log.hours }}h {{ log.minutes }}m</span>
+                                        </div>
+                                    </div>
+                                    <div v-else class="text-[13px] text-gray-400 italic py-6 text-center">No time logs in the selected range.</div>
+                                </div>
+                            </div>
+                            <div v-else class="text-center py-10 text-gray-400 italic text-[14px]">Select a staff member to view their work stats.</div>
+                        </div>
+                    </main>
+
+                </div>
+            </div>
+
+            <!-- MODAL: ADD / EDIT TASK -->
+            <div v-if="showTaskModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-100 overflow-hidden transform scale-100 transition duration-300 max-h-[90vh] flex flex-col">
+                    <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
+                        <h4 class="text-base font-bold flex items-center gap-1.5">
+                            <i class="fa-solid" :class="editingTaskId ? 'fa-pen' : 'fa-plus'"></i>
+                            <span>{{ editingTaskId ? 'Edit Client Task Details' : 'Create Client Task' }}</span>
+                        </h4>
+                        <button @click="closeTaskModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <form @submit.prevent="submitTaskForm" class="p-6 space-y-4 flex-1 overflow-y-auto pr-3">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Client</label>
+                            <select v-model="taskForm.client_id" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-700">
+                                <option disabled value="">Select client...</option>
+                                <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Service Template</label>
+                            <select v-model="taskForm.service_id" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-700">
+                                <option disabled value="">Select service...</option>
+                                <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }}</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Recurrence Plan (Only when creating task) -->
+                        <div v-if="!editingTaskId">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Recurrence Plan</label>
+                            <select v-model="taskForm.recurrence_type" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-700">
+                                <option value="one_time">One-Time Task</option>
+                                <option value="monthly">Monthly Recurring</option>
+                                <option value="quarterly">Quarterly Recurring</option>
+                                <option value="six_monthly">Six-Monthly Recurring</option>
+                                <option value="annual">Annual Recurring</option>
+                            </select>
+                        </div>
+
+                        <!-- Assigned Staff (Only for one-time or editing) -->
+                        <div v-if="editingTaskId || taskForm.recurrence_type === 'one_time'">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Assigned Staff</label>
+                            <select v-model="taskForm.assigned_to" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-700">
+                                <option value="">-- Keep Unassigned --</option>
+                                <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.full_name }} ({{ u.role }})</option>
+                            </select>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Financial Year</label>
+                                <input v-model="taskForm.financial_year" type="text" placeholder="e.g. 2025-26" required pattern="20[0-9]{2}-[0-9]{2}" title="FY must match format YYYY-YY (e.g. 2025-26)" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                            </div>
+                            <!-- Periodicity (Only for one-time or editing) -->
+                            <div v-if="editingTaskId || taskForm.recurrence_type === 'one_time'">
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Periodicity</label>
+                                <input v-model="taskForm.period" type="text" placeholder="E.g., May, Q1, Annual" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                            </div>
+                        </div>
+
+                        <!-- Due Date (Only for one-time or editing) -->
+                        <div v-if="editingTaskId || taskForm.recurrence_type === 'one_time'">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Due Date</label>
+                            <input v-model="taskForm.due_date" type="date" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-sans">
+                        </div>
+
+                        <!-- Recurring Info Helper -->
+                        <div v-if="!editingTaskId && taskForm.recurrence_type !== 'one_time'" class="bg-indigo-50 border border-indigo-100 rounded-xl p-3.5 text-xs text-indigo-700 font-medium">
+                            <i class="fa-solid fa-circle-info mr-1.5 text-accent animate-pulse"></i>
+                            <span>Recurring tasks are generated automatically as <strong>Unassigned</strong>. Due dates will be calculated using the service's default due day.</span>
+                        </div>
+
+                        <!-- Add Status update field inside Task modal if editing -->
+                        <div v-if="editingTaskId">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Compliance Status</label>
+                            <select v-model="taskForm.status" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-700">
+                                <option value="Working">Working</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Completed">Completed</option>
+                            </select>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-2 border-t mt-4 text-xs font-semibold">
+                            <button type="button" @click="closeTaskModal" class="px-4 py-2 text-gray-500 hover:bg-gray-50 rounded-lg">Cancel</button>
+                            <button type="submit" class="px-5 py-2.5 bg-primary hover:bg-blue-800 text-white rounded-lg transition shadow">
+                                {{ editingTaskId ? 'Save Changes' : 'Create Task' }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- MODAL: ADD / EDIT CLIENT MASTER -->
+            <div v-if="showClientModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg border border-gray-100 overflow-hidden max-h-[90vh] flex flex-col">
+                    <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
+                        <h4 class="text-base font-bold flex items-center gap-1.5">
+                            <i class="fa-solid" :class="editingClientId ? 'fa-pen' : 'fa-user-plus'"></i>
+                            <span>{{ editingClientId ? 'Edit Client Master Profile' : 'Add Client Master Profile' }}</span>
+                        </h4>
+                        <button @click="closeClientModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <form @submit.prevent="submitClientForm" class="p-6 space-y-4 flex-1 overflow-y-auto pr-3">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="col-span-2">
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Client Full Name</label>
+                                <input v-model="clientForm.name" type="text" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Client Group (Family)</label>
+                                <select v-model="clientForm.group_id" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-700" :disabled="clientForm.new_group_name.length > 0">
+                                    <option value="">None / Individual</option>
+                                    <option v-for="g in clientGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Or Create Group</label>
+                                <input v-model="clientForm.new_group_name" type="text" placeholder="E.g., Mehta Family" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Entity Type</label>
+                                <select v-model="clientForm.entity_type" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-750">
+                                    <option value="Proprietor">Proprietor</option>
+                                    <option value="Partnership">Partnership Firm</option>
+                                    <option value="LLP">LLP</option>
+                                    <option value="Pvt Ltd">Pvt Ltd Company</option>
+                                    <option value="HUF">HUF</option>
+                                    <option value="Individual">Individual (Salaried)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Card Number</label>
+                                <input v-model="clientForm.pan" type="text" maxlength="10" placeholder="e.g. ABCDE1234F" required pattern="[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}" title="PAN card must be exactly 10 characters (e.g. ABCDE1234F)" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono uppercase">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">GSTIN Number (Optional)</label>
+                                <input v-model="clientForm.gstin" type="text" maxlength="15" placeholder="e.g. 27ABCDE1234F1Z5" pattern="[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}[0-9A-Za-z]{1}Z[0-9A-Za-z]{1}" title="GSTIN must be exactly 15 characters (e.g. 27ABCDE1234F1Z5)" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono uppercase">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Cabinet Folder Location</label>
+                                <input v-model="clientForm.physical_folder_location" type="text" placeholder="Cabinet A, Shelf 3" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Data Storage Location</label>
+                                <input v-model="clientForm.data_location" type="text" placeholder="E.g., \\SERVER\Share\ClientData" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                            </div>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-2 border-t mt-4 text-xs font-semibold">
+                            <button type="button" @click="closeClientModal" class="px-4 py-2 text-gray-500 hover:bg-gray-50 rounded-lg">Cancel</button>
+                            <button type="submit" class="px-5 py-2.5 bg-primary hover:bg-blue-800 text-white rounded-lg transition shadow">
+                                {{ editingClientId ? 'Save Changes' : 'Save Client' }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- MODAL: ADD / EDIT PERSONNEL -->
+            <div v-if="showUserModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-100 overflow-hidden max-h-[90vh] flex flex-col">
+                    <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
+                        <h4 class="text-base font-bold flex items-center gap-1.5">
+                            <i class="fa-solid" :class="editingUserId ? 'fa-pen' : 'fa-user-plus'"></i>
+                            <span>{{ editingUserId ? 'Edit Staff Account Details' : 'Add Staff Account' }}</span>
+                        </h4>
+                        <button @click="closeUserModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <form @submit.prevent="submitUserForm" class="p-6 space-y-4 flex-1 overflow-y-auto pr-3">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Full Name</label>
+                            <input v-model="userForm.full_name" type="text" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Username</label>
+                            <input v-model="userForm.username" type="text" required pattern="[a-z0-9_]{3,15}" title="Username must be 3-15 alphanumeric/underscore lowercase characters" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                <span>{{ editingUserId ? 'New Password (Leave blank to keep same)' : 'Initial Password' }}</span>
+                            </label>
+                            <input v-model="userForm.password" type="password" :required="!editingUserId" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm" placeholder="Encrypted securely in DB">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Access Role</label>
+                            <select v-model="userForm.role" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-700">
+                                <option value="Employee">Employee (Timesheet + Task viewer)</option>
+                                <option value="Admin">Admin / Super User (Full management)</option>
+                            </select>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-2 border-t mt-4 text-xs font-semibold">
+                            <button type="button" @click="closeUserModal" class="px-4 py-2 text-gray-500 hover:bg-gray-50 rounded-lg">Cancel</button>
+                            <button type="submit" class="px-5 py-2.5 bg-primary hover:bg-blue-800 text-white rounded-lg transition shadow">
+                                {{ editingUserId ? 'Save Changes' : 'Save Account' }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- MODAL: ADD / EDIT CUSTOM SERVICE -->
+            <div v-if="showServiceModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-150 overflow-hidden transform scale-100 transition duration-300 animate-fade-in max-h-[90vh] flex flex-col">
+                    <div class="bg-primary text-white px-6 py-4 flex items-center justify-between border-b border-white/10 shrink-0">
+                        <h4 class="text-base font-bold flex items-center gap-1.5">
+                            <i class="fa-solid" :class="editingServiceId ? 'fa-pen' : 'fa-folder-plus'"></i>
+                            <span>{{ editingServiceId ? 'Edit Service Template details' : 'Create Catalog Service' }}</span>
+                        </h4>
+                        <button @click="closeServiceModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <form @submit.prevent="submitServiceForm" class="p-6 space-y-4 flex-1 overflow-y-auto pr-3">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Service Template Name</label>
+                            <input v-model="serviceForm.name" type="text" placeholder="E.g. TDS Quarter Filing" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Service Description / Scope</label>
+                            <textarea v-model="serviceForm.description" placeholder="E.g., Quarterly compliance filing of salary & non-salary forms..." required rows="2" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary resize-none"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Compliance Steps (Comma Separated)</label>
+                            <textarea v-model="serviceForm.checklist_raw" placeholder="E.g., Collect Data, Reconcile Ledger, Verify PANs, File Return, Send Receipt..." required rows="4" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary resize-none font-sans"></textarea>
+                            <span class="text-[10px] text-gray-400 mt-1 block font-medium">Type steps separated by commas. We will automatically compile this into dynamic checklists!</span>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Default Due Day (1 to 31)</label>
+                            <input v-model.number="serviceForm.default_due_day" type="number" min="1" max="31" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+                            <span class="text-[10px] text-gray-400 mt-1 block font-medium">Standard day of the month when this compliance task is normally due.</span>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-2 border-t mt-4 text-xs font-semibold">
+                            <button type="button" @click="closeServiceModal" class="px-4 py-2 text-gray-500 hover:bg-gray-50 rounded-lg">Cancel</button>
+                            <button type="submit" class="px-5 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg transition shadow">
+                                {{ editingServiceId ? 'Save Changes' : 'Save Service Catalog' }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- MODAL / DRAWER: INTEGRATED CLIENT SECURE VAULT -->
+            <div v-if="vaultClientObj" class="fixed inset-0 z-50 flex items-center justify-end bg-black/55 backdrop-blur-xs p-0 animate-slide-in">
+                <div class="bg-white h-screen w-full max-w-md shadow-2xl border-l flex flex-col justify-between">
+                    <!-- Vault Header -->
+                    <div class="bg-primary text-white p-6 flex flex-col gap-1.5 shadow border-b border-white/10">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-accent uppercase tracking-widest"><i class="fa-solid fa-vault"></i> Secure Credentials Box</span>
+                            <button @click="closeVault" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                        </div>
+                        <h3 class="text-lg font-bold truncate leading-tight">{{ vaultClientObj.name }}</h3>
+                        <span class="text-[10px] text-gray-400">All data below is AES-256 CTR local decrypted on-demand only.</span>
+                    </div>
+
+                    <!-- Vault Content Scroll -->
+                    <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                        <!-- Store New Credential -->
+                        <div class="bg-gray-50 rounded-xl border border-gray-150 p-4 space-y-3.5">
+                            <h4 class="text-xs font-bold text-gray-600 uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid fa-lock text-gray-500"></i> Store New Portal Credential</h4>
+                            <form @submit.prevent="saveVaultCredential" class="space-y-3">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Portal Name</label>
+                                    <input v-model="credForm.portal_name" type="text" placeholder="E.g. Income Tax, GST, MCA" required class="w-full rounded-lg border border-gray-200 p-2 text-xs">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Portal Password</label>
+                                    <input v-model="credForm.password" type="password" required class="w-full rounded-lg border border-gray-200 p-2 text-xs" placeholder="Never plaintext in DB">
+                                </div>
+                                <button type="submit" class="w-full bg-gray-800 hover:bg-black text-white text-xs font-bold py-2 rounded-lg transition shadow-sm">
+                                    Save AES-256 Encrypted
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Decrypt / Edit / Delete List -->
+                        <div class="space-y-3">
+                            <h4 class="text-xs font-bold text-gray-600 uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid fa-list-check text-gray-500"></i> Stored Portals ({{ vaultCredentials.length }})</h4>
+                            <div v-if="vaultCredentials.length > 0" class="space-y-2.5">
+                                <div v-for="vc in vaultCredentials" :key="vc.id" class="border rounded-xl p-3.5 flex flex-col gap-3 bg-white shadow-sm border-gray-150 hover:shadow transition">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <div class="font-bold text-sm text-gray-800 leading-tight flex items-center gap-1.5">
+                                                <i class="fa-solid fa-globe text-xs text-gray-400"></i>
+                                                <span>{{ vc.portal_name }}</span>
+                                            </div>
+                                            <span class="text-[9px] text-gray-400 font-mono">SEC-ID: {{ vc.id }}</span>
+                                        </div>
+                                        
+                                        <!-- Password Delete Action: visible strictly only to Admin and Super Users -->
+                                        <button v-if="currentUser.role === 'Admin'" @click="deleteCredential(vc.id)" class="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete Credential">
+                                            <i class="fa-solid fa-trash-can text-sm"></i>
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl p-2.5">
+                                        <!-- Regular Display & Edit buttons -->
+                                        <div v-if="editingCredId !== vc.id" class="flex-1 flex items-center justify-between">
+                                            <span class="font-mono text-xs text-gray-700 font-bold select-all">
+                                                {{ decryptedPasswords[vc.id] ? decryptedPasswords[vc.id] : '••••••••' }}
+                                            </span>
+                                            <div class="flex items-center gap-1.5">
+                                                <button @click="toggleRevealPassword(vc.id)" class="text-accent hover:text-accent-hover hover:bg-accent-light px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1">
+                                                    <i class="fa-solid" :class="decryptedPasswords[vc.id] ? 'fa-eye-slash' : 'fa-eye'"></i>
+                                                    <span>{{ decryptedPasswords[vc.id] ? 'Hide' : 'Reveal' }}</span>
+                                                </button>
+                                                <button @click="startEditCredential(vc.id, decryptedPasswords[vc.id])" class="text-gray-600 hover:text-gray-850 hover:bg-gray-150 px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1">
+                                                    <i class="fa-solid fa-pen"></i>
+                                                    <span>Edit</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Inline Editing Fields -->
+                                        <div v-else class="flex-1 flex items-center gap-2">
+                                            <input v-model="editingPassword" type="text" class="flex-1 rounded-lg border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary text-gray-800" placeholder="Enter new password...">
+                                            <div class="flex items-center gap-1">
+                                                <button @click="savePasswordEdit(vc.id)" class="text-green-600 hover:text-green-800 hover:bg-green-50 p-1.5 rounded-lg transition" title="Save">
+                                                    <i class="fa-solid fa-check text-sm"></i>
+                                                </button>
+                                                <button @click="cancelEditCredential" class="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-lg transition" title="Cancel">
+                                                    <i class="fa-solid fa-xmark text-sm"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-else class="text-center py-8 bg-gray-50/20 border border-dashed border-gray-200 rounded-xl text-gray-400 italic text-xs">
+                                No stored credentials found for this client.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Vault Footer -->
+                    <div class="p-4 border-t bg-gray-50 text-center">
+                        <span class="text-[10px] text-gray-400 font-mono">Strict Local Sandbox Security</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL / DRAWER: INTEGRATED CLIENT CONTACTS BOX -->
+            <div v-if="contactClientObj" class="fixed inset-0 z-50 flex items-center justify-end bg-black/55 backdrop-blur-xs p-0 animate-slide-in">
+                <div class="bg-white h-screen w-full max-w-md shadow-2xl border-l flex flex-col justify-between">
+                    <!-- Contacts Header -->
+                    <div class="bg-primary text-white p-6 flex flex-col gap-1.5 shadow border-b border-white/10">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-accent uppercase tracking-widest"><i class="fa-solid fa-address-book"></i> Client Contacts Panel</span>
+                            <button @click="closeContacts" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                        </div>
+                        <h3 class="text-lg font-bold truncate leading-tight">{{ contactClientObj.name }}</h3>
+                        <span class="text-[10px] text-blue-300">
+                            {{ currentUser.role === 'Admin' ? 'Displaying all contact channels.' : 'Only accountant contacts are visible for security.' }}
+                        </span>
+                    </div>
+
+                    <!-- Contacts Content Scroll -->
+                    <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                        <!-- Add New Contact (Admin Only) -->
+                        <div v-if="currentUser.role === 'Admin'" class="bg-gray-50 rounded-xl border border-gray-150 p-4 space-y-3.5">
+                            <h4 class="text-xs font-bold text-gray-600 uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid fa-user-plus text-gray-500"></i> Register New Contact</h4>
+                            <form @submit.prevent="saveVaultContact" class="space-y-3">
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div class="col-span-2">
+                                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Full Name</label>
+                                        <input v-model="contactForm.name" type="text" placeholder="E.g. Mr. Vinay Mehta" required class="w-full rounded-lg border border-gray-200 p-2 text-xs">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Designation</label>
+                                        <select v-model="contactForm.designation" required class="w-full rounded-lg border border-gray-200 p-2 text-xs bg-white text-gray-700">
+                                            <option value="Proprietor">Proprietor</option>
+                                            <option value="Director">Director</option>
+                                            <option value="Accountant">Accountant</option>
+                                            <option value="Personal Assistant">Personal Assistant</option>
+                                            <option value="Other">Other Partner</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Mobile No</label>
+                                        <input v-model="contactForm.mobile" type="tel" placeholder="10-digit number" required pattern="[6-9][0-9]{9}" title="Mobile number must be exactly 10 digits starting with 6-9" class="w-full rounded-lg border border-gray-200 p-2 text-xs">
+                                    </div>
+                                    <div class="col-span-2">
+                                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Email ID</label>
+                                        <input v-model="contactForm.email" type="email" placeholder="email@domain.com" required class="w-full rounded-lg border border-gray-200 p-2 text-xs font-mono">
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full bg-primary hover:bg-primary-hover text-white text-xs font-bold py-2 rounded-lg transition shadow-sm">
+                                    Save Contact Record
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Contacts directory list -->
+                        <div class="space-y-3">
+                            <h4 class="text-xs font-bold text-gray-600 uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid fa-list-ul text-gray-500"></i> Contact Directory ({{ filteredContactsList.length }})</h4>
+                            <div v-if="filteredContactsList.length > 0" class="space-y-3">
+                                <div v-for="ct in filteredContactsList" :key="ct.id" class="border rounded-2xl p-4 bg-white shadow-sm border-gray-150 hover:shadow transition">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <div class="font-bold text-sm text-gray-800 leading-tight">{{ ct.name }}</div>
+                                            <span class="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2 py-0.5 rounded-lg text-[10px] font-bold mt-1 inline-block">{{ ct.designation }}</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mt-3.5 space-y-1.5 border-t pt-2.5 text-xs text-gray-600 font-medium font-mono">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fa-solid fa-phone text-[10px] text-gray-400 w-4"></i>
+                                            <span class="select-all">{{ ct.mobile }}</span>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <i class="fa-solid fa-envelope text-[10px] text-gray-400 w-4"></i>
+                                            <span class="select-all truncate">{{ ct.email }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-else class="text-center py-8 bg-gray-50/20 border border-dashed border-gray-200 rounded-xl text-gray-400 italic text-xs">
+                                No contact channels found matching filters.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Contacts Footer -->
+                    <div class="p-4 border-t bg-gray-50 text-center">
+                        <span class="text-[10px] text-gray-400 font-mono">Strict Local Sandbox Security</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL: TASK COMPLETION CELEBRATION -->
+            <div v-if="showCompletionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
+                    <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-5 text-center shrink-0">
+                        <div class="text-4xl mb-1"><i class="fa-solid fa-trophy"></i></div>
+                        <h4 class="text-lg font-black">Task Completed!</h4>
+                        <p class="text-xs text-green-50 mt-0.5" v-if="completionTask">{{ completionTask.client_name }} — {{ completionTask.service_name }}</p>
+                    </div>
+                    <form @submit.prevent="submitCompletionLog" class="p-6 space-y-4 flex-1 overflow-y-auto">
+                        <p class="text-sm text-gray-600 text-center">Great work! File your final timesheet for this task.</p>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Date</label>
+                            <input v-model="tsForm.log_date" type="date" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Hours</label>
+                                <input v-model.number="tsForm.hours" type="number" min="0" max="23" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono text-center">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Minutes</label>
+                                <input v-model.number="tsForm.minutes" type="number" min="0" max="59" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono text-center">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Work Description</label>
+                            <textarea v-model="tsForm.description" rows="3" required placeholder="Summary of completed work..." class="w-full rounded-xl border border-gray-200 p-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary"></textarea>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-1">
+                            <button type="button" @click="closeCompletionModal" class="px-4 py-2 text-xs font-bold text-gray-500 hover:text-gray-700 transition">Skip for now</button>
+                            <button type="submit" class="bg-primary hover:bg-primary-hover text-white font-bold py-2.5 px-5 rounded-xl text-sm shadow-md transition flex items-center gap-1.5"><i class="fa-solid fa-circle-check"></i> Submit Time Log</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- MODAL: ASSIGN TASK (when dragging from the Unassigned column) -->
+            <div v-if="showAssignModal && assignTargetTask && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm border border-gray-100 overflow-hidden">
+                    <div class="bg-primary text-white px-6 py-4 flex items-center justify-between">
+                        <h4 class="text-base font-semibold flex items-center gap-2"><i class="fa-solid fa-user-plus"></i> Assign Task</h4>
+                        <button @click="closeAssignModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <p class="text-[14px] text-gray-600 leading-relaxed">
+                            Assign <span class="font-semibold text-gray-800">{{ assignTargetTask.client_name }} · {{ assignTargetTask.service_name }}</span><span v-if="assignTargetStatus"> and move it to <span class="font-semibold text-gray-800">{{ assignTargetStatus }}</span></span>.
+                        </p>
+                        <div>
+                            <label class="block text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Staff Member</label>
+                            <select v-model="assignSelectedUser" class="w-full rounded-xl border border-gray-200 p-2.5 text-[14px] bg-white">
+                                <option value="">Select a staff member…</option>
+                                <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.full_name }} ({{ u.role }})</option>
+                            </select>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-2">
+                            <button @click="closeAssignModal" class="px-4 py-2 text-[14px] font-semibold text-gray-500 hover:bg-gray-50 rounded-lg transition">Cancel</button>
+                            <button @click="confirmAssignModal" :disabled="!assignSelectedUser" class="px-5 py-2.5 text-[14px] bg-primary hover:bg-primary-hover text-white rounded-lg font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed">Assign</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

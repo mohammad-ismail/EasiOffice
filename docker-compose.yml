@@ -1,0 +1,29 @@
+services:
+  ca-office-manager:
+    build: .
+    container_name: ca-office-manager
+    ports:
+      - "8000:8000"
+    environment:
+      # NAS runs in IST; without this, audit-log/timesheet timestamps would be UTC.
+      - TZ=Asia/Kolkata
+      # DB + vault key both live on the persistent volume below.
+      - DB_PATH=/app/data/easibusiness.db
+      - SECRET_KEY_PATH=/app/data/secret.key
+      # Initial admin password (used only on first seed). CHANGE THIS before first boot.
+      - ADMIN_PASSWORD=change-me-on-first-boot
+      # --- Enable these two once you front the app with the Synology reverse proxy (HTTPS) ---
+      # - TRUST_PROXY=true            # honour X-Forwarded-* (real client IP + HTTPS scheme)
+      # - SESSION_COOKIE_SECURE=true  # only send the session cookie over HTTPS
+    volumes:
+      # Persists the SQLite database AND the AES vault key across container rebuilds.
+      # On Synology this resolves inside the Container Manager project folder
+      # (e.g. /volume1/docker/ca-office/data). >>> BACK THIS FOLDER UP REGULARLY. <<<
+      - ./data:/app/data
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

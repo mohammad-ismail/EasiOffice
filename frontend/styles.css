@@ -73,29 +73,29 @@ h1, h2, h3, h4 { letter-spacing: -0.022em; }
    macOS-style sidebar — fit-to-content width
    ============================================================ */
 .app-sidebar {
-    background: rgba(244, 244, 244, 0.82);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
-    backdrop-filter: saturate(180%) blur(20px);
-    border-right: 1px solid rgba(0, 0, 0, 0.08);
+    background: #0d4f4a;
+    border-right: 1px solid rgba(0, 0, 0, 0.15);
+    color: #e8efee;
 }
-.app-sidebar .brand-title { color: #111111; }
+.app-sidebar .brand-title { color: #ffffff; }
 
 .nav-link {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    padding: 0.5rem 0.7rem;
-    border-radius: 0.6rem;
-    color: #3a3a3a;
+    gap: 0.85rem;
+    padding: 0.65rem 0.9rem;
+    border-radius: 0.7rem;
+    color: #d6e2e0;
     font-size: 15px;
     font-weight: 500;
     white-space: nowrap;
     transition: background 0.15s ease, color 0.15s ease;
 }
-.nav-link i { width: 1.45rem; text-align: center; font-size: 1.02rem; color: #6e6e6e; transition: color 0.15s ease; }
-.nav-link:hover { background: rgba(0, 0, 0, 0.05); }
-.nav-link.active { background: rgba(0, 0, 0, 0.08); color: #000000; font-weight: 600; }
-.nav-link.active i { color: #000000; }
+.nav-link i { width: 1.45rem; text-align: center; font-size: 1.02rem; color: #b9cac7; transition: color 0.15s ease; }
+.nav-link:hover { background: rgba(255, 255, 255, 0.08); color: #ffffff; }
+.nav-link:hover i { color: #ffffff; }
+.nav-link.active { background: #ffffff; color: #0d4f4a; font-weight: 600; box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
+.nav-link.active i { color: #0d4f4a; }
 
 /* Collapsed rail: center the glyphs */
 .app-sidebar.collapsed .nav-link { justify-content: center; padding: 0.55rem 0; gap: 0; }
@@ -232,13 +232,14 @@ html.dark input::placeholder,
 html.dark textarea::placeholder { color: #9a9282 !important; }
 
 /* Sidebar (cream) */
-html.dark .app-sidebar { background: rgba(236, 230, 219, 0.85) !important; border-right-color: #e0d8ca !important; }
-html.dark .app-sidebar .brand-title { color: #2b2b2b; }
-html.dark .nav-link { color: #4a4439; }
-html.dark .nav-link i { color: #8a8270; }
-html.dark .nav-link:hover { background: rgba(0, 0, 0, 0.05); }
-html.dark .nav-link.active { background: rgba(0, 0, 0, 0.07); color: #1f1b14; }
-html.dark .nav-link.active i { color: #2b2b2b; }
+html.dark .app-sidebar { background: #082e2b !important; border-right-color: rgba(0,0,0,0.25) !important; }
+html.dark .app-sidebar .brand-title { color: #ffffff; }
+html.dark .nav-link { color: #b9cac7; }
+html.dark .nav-link i { color: #8aabA6; }
+html.dark .nav-link:hover { background: rgba(255,255,255,0.08) !important; color: #ffffff; }
+html.dark .nav-link:hover i { color: #ffffff; }
+html.dark .nav-link.active { background: #ffffff !important; color: #082e2b; }
+html.dark .nav-link.active i { color: #082e2b; }
 
 /* Kanban + cards (cream) */
 html.dark .kanban-col { background: rgba(0, 0, 0, 0.03); border-color: #e2dbcd; }

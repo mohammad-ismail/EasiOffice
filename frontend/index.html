@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EasiOffice</title>
+    <title>EasiSolution</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
     <!-- Vendored locally so the app works on an isolated/offline LAN (no CDN dependency) -->
     <!-- Tailwind CSS -->
     <script src="/static/vendor/tailwindcss.js"></script>
@@ -41,10 +42,8 @@
             <!-- Clean Apple-style Login Card -->
             <div class="w-full max-w-sm rounded-3xl border border-black/5 p-9 flex flex-col animate-fade-in" style="background:#ffffff; box-shadow: 0 24px 64px rgba(0,0,0,0.12);">
                 <div class="flex flex-col items-center mb-8">
-                    <div class="w-16 h-16 rounded-[20px] flex items-center justify-center text-white text-2xl shadow-lg mb-4" style="background: linear-gradient(160deg, var(--color-accent), var(--color-primary));">
-                        <i class="fa-solid fa-briefcase"></i>
-                    </div>
-                    <h1 class="text-[26px] font-semibold tracking-tight text-gray-900">EasiOffice</h1>
+                    <img src="/static/logo.png" alt="EasiSolution" class="w-20 h-20 mb-4 drop-shadow-lg rounded-full" style="object-fit:cover;">
+                    <h1 class="text-[26px] font-semibold tracking-tight text-gray-900">EasiSolution</h1>
                     <p class="text-[14px] text-gray-400 mt-1">Office Management for CA Firms</p>
                 </div>
 
@@ -83,10 +82,8 @@
                    :class="isSidebarCollapsed ? 'collapsed w-[4.25rem]' : 'w-[13.5rem]'">
                 <div class="h-16 flex items-center px-4 transition-all"
                      :class="isSidebarCollapsed ? 'justify-center' : 'justify-start gap-2.5'">
-                    <div class="w-8 h-8 rounded-[9px] flex items-center justify-center text-white shrink-0 shadow-sm" style="background: linear-gradient(160deg, var(--color-accent), var(--color-primary));">
-                        <i class="fa-solid fa-briefcase text-sm"></i>
-                    </div>
-                    <h1 v-show="!isSidebarCollapsed" class="brand-title text-[17px] font-semibold tracking-tight truncate">EasiOffice</h1>
+                    <img src="/static/logo.png" alt="EasiSolution" class="w-8 h-8 shrink-0 rounded-full" style="object-fit:cover;">
+                    <h1 v-show="!isSidebarCollapsed" class="brand-title text-[17px] font-semibold tracking-tight truncate">EasiSolution</h1>
                 </div>
                 <nav class="flex-1 px-2.5 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
                     <a href="#" @click="currentTab = 'dashboard'" class="nav-link" :class="{ active: currentTab === 'dashboard' }" :title="isSidebarCollapsed ? 'Dashboard' : ''">
@@ -122,17 +119,18 @@
                         <span v-show="!isSidebarCollapsed">Activity Log</span>
                     </a>
                 </nav>
-                <div class="p-2.5 border-t border-black/5 flex flex-col gap-2.5">
-                    <button @click="handleLogout" class="w-full py-2 rounded-[10px] text-sm font-medium text-red-500 hover:bg-red-500/10 transition flex items-center justify-center gap-2" :title="isSidebarCollapsed ? 'Logout' : ''">
-                        <i class="fa-solid fa-arrow-right-from-bracket"></i>
-                        <span v-show="!isSidebarCollapsed">Sign Out</span>
-                    </button>
+                <div class="p-2.5 border-t border-white/10 flex flex-col gap-2.5">
                     <div v-show="!isSidebarCollapsed" class="flex flex-col gap-0.5 px-1.5 pb-1 animate-fade-in">
-                        <span class="text-[13px] text-gray-700 font-semibold truncate">{{ currentUser.full_name }}</span>
-                        <span class="text-[11px] text-gray-400 flex items-center gap-1 font-medium">
+                        <span class="text-[13px] font-semibold truncate" style="color:#ffffff;">{{ currentUser.full_name }}</span>
+                        <span class="text-[11px] flex items-center gap-1 font-medium" style="color:#8aaba6;">
                             <i class="fa-solid fa-lock text-[10px]"></i> AES-256 encrypted
                         </span>
                     </div>
+                    <button @click="handleLogout" class="w-full py-2 rounded-[10px] text-sm font-medium transition flex items-center justify-center gap-2" style="color:#f87171;" :title="isSidebarCollapsed ? 'Logout' : ''"
+                        onmouseover="this.style.background='rgba(248,113,113,0.12)'" onmouseout="this.style.background='transparent'">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                        <span v-show="!isSidebarCollapsed">Sign Out</span>
+                    </button>
                 </div>
             </aside>
 

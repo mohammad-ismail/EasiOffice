@@ -47,6 +47,10 @@ h1, h2, h3, h4 { letter-spacing: -0.022em; }
    ============================================================ */
 *, *::before, *::after { border-radius: 0 !important; }
 
+/* Exception: the brand logo stays a circle. A class selector (0,1,0) outranks
+   the universal selector (0,0,0) above, so this !important wins. */
+.app-logo { border-radius: 9999px !important; }
+
 /* Morning (black & white) canvas tone */
 .bg-gray-50,
 .bg-gray-50\/50,

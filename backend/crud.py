@@ -196,6 +196,90 @@ def create_client(db, client_data: dict):
     db.commit()
     return {"id": cursor.lastrowid}
 
+def import_clients(db, rows: list):
+    """Bulk-insert pre-validated client rows (each a dict of canonical fields).
+
+    Group names are resolved to ids case-insensitively, creating any group that
+    doesn't yet exist. Returns the number of clients created.
+    """
+    cursor = db.cursor()
+    cursor.execute('SELECT id, name FROM client_groups')
+    groups = {(r['name'] or '').strip().lower(): r['id'] for r in cursor.fetchall()}
+    created = 0
+    for row in rows:
+        group_id = None
+        gname = (row.get('group') or '').strip()
+        if gname:
+            key = gname.lower()
+            if key in groups:
+                group_id = groups[key]
+            else:
+                cursor.execute('INSERT INTO client_groups (name) VALUES (?)', (gname,))
+                group_id = cursor.lastrowid
+                groups[key] = group_id
+        cursor.execute('''
+            INSERT INTO client_master (group_id, name, entity_type, pan, gstin, physical_folder_location, data_location, assigned_to)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (group_id, row.get('name', ''), row.get('entity_type', ''),
+              row.get('pan', ''), row.get('gstin', ''),
+              row.get('physical_folder_location', ''), row.get('data_location', ''), None))
+        created += 1
+    db.commit()
+    return created
+
+def import_services(db, rows: list):
+    """Bulk-insert pre-validated service rows. Returns count created."""
+    cursor = db.cursor()
+    created = 0
+    for row in rows:
+        checklist_list = [item.strip() for item in str(row.get('checklist', '')).replace('\n', ',').split(',') if item.strip()]
+        checklist_json = json.dumps(checklist_list)
+        cursor.execute('''
+            INSERT INTO service_master (name, description, checklist_json, default_due_day)
+            VALUES (?, ?, ?, ?)
+        ''', (row.get('name', ''), row.get('description', ''), checklist_json, row.get('default_due_day', 15)))
+        created += 1
+    db.commit()
+    return created
+
+def import_users(db, rows: list):
+    """Bulk-insert pre-validated staff rows. Passwords are hashed; role is always
+    'Employee'. Returns count created."""
+    cursor = db.cursor()
+    created = 0
+    for row in rows:
+        hashed = security.hash_password(row['password'])
+        cursor.execute('''
+            INSERT INTO users (username, password, role, full_name)
+            VALUES (?, ?, 'Employee', ?)
+        ''', (row['username'], hashed, row.get('full_name', '')))
+        created += 1
+    db.commit()
+    return created
+
+def import_tasks(db, rows: list):
+    """Bulk-insert pre-resolved task rows (client_id/service_id already looked up).
+    Returns count created."""
+    cursor = db.cursor()
+    created = 0
+    for row in rows:
+        cursor.execute('''
+            INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (row['client_id'], row['service_id'], row['financial_year'], row['period'],
+              row.get('status', 'Working'), row.get('assigned_to'), row.get('due_date')))
+        created += 1
+    db.commit()
+    return created
+
+def clear_activity_logs(db, from_date: str, to_date: str):
+    """Delete activity-log rows whose date falls within [from_date, to_date]
+    (inclusive, YYYY-MM-DD). Returns the number of rows deleted."""
+    cursor = db.cursor()
+    cursor.execute("DELETE FROM activity_log WHERE date(timestamp) BETWEEN ? AND ?", (from_date, to_date))
+    db.commit()
+    return cursor.rowcount
+
 def create_bulk_tasks(db, bulk_data: dict):
     cursor = db.cursor()
     cursor.execute('SELECT id FROM client_master')

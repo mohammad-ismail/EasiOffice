@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EasiSolution</title>
+    <title>EasiOffice</title>
     <link rel="icon" type="image/png" href="/static/logo.png">
     <!-- Vendored locally so the app works on an isolated/offline LAN (no CDN dependency) -->
     <!-- Tailwind CSS -->
@@ -42,8 +42,8 @@
             <!-- Clean Apple-style Login Card -->
             <div class="w-full max-w-sm rounded-3xl border border-black/5 p-9 flex flex-col animate-fade-in" style="background:#ffffff; box-shadow: 0 24px 64px rgba(0,0,0,0.12);">
                 <div class="flex flex-col items-center mb-8">
-                    <img src="/static/logo.png" alt="EasiSolution" class="w-20 h-20 mb-4 drop-shadow-lg rounded-full" style="object-fit:cover;">
-                    <h1 class="text-[26px] font-semibold tracking-tight text-gray-900">EasiSolution</h1>
+                    <img src="/static/logo.png" alt="EasiOffice" class="app-logo w-20 h-20 mb-4 drop-shadow-lg rounded-full" style="object-fit:cover;">
+                    <h1 class="text-[26px] font-semibold tracking-tight text-gray-900">EasiOffice</h1>
                     <p class="text-[14px] text-gray-400 mt-1">Office Management for CA Firms</p>
                 </div>
 
@@ -82,8 +82,8 @@
                    :class="isSidebarCollapsed ? 'collapsed w-[4.25rem]' : 'w-[13.5rem]'">
                 <div class="h-16 flex items-center px-4 transition-all"
                      :class="isSidebarCollapsed ? 'justify-center' : 'justify-start gap-2.5'">
-                    <img src="/static/logo.png" alt="EasiSolution" class="w-8 h-8 shrink-0 rounded-full" style="object-fit:cover;">
-                    <h1 v-show="!isSidebarCollapsed" class="brand-title text-[17px] font-semibold tracking-tight truncate">EasiSolution</h1>
+                    <img src="/static/logo.png" alt="EasiOffice" class="app-logo w-8 h-8 shrink-0 rounded-full" style="object-fit:cover;">
+                    <h1 v-show="!isSidebarCollapsed" class="brand-title text-[17px] font-semibold tracking-tight truncate">EasiOffice</h1>
                 </div>
                 <nav class="flex-1 px-2.5 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
                     <a href="#" @click="currentTab = 'dashboard'" class="nav-link" :class="{ active: currentTab === 'dashboard' }" :title="isSidebarCollapsed ? 'Dashboard' : ''">
@@ -191,16 +191,21 @@
                     <!-- 1. DASHBOARD TAB — Kanban Board -->
                     <main v-if="currentTab === 'dashboard'" class="p-7 h-full flex flex-col">
                         <!-- Board intro + active timer -->
-                        <div class="flex items-center justify-between mb-5 shrink-0">
+                        <div class="flex items-center justify-between mb-5 shrink-0 gap-3">
                             <p class="text-[15px] text-gray-500">
                                 {{ currentUser.role === 'Admin' ? 'Drag cards across columns to assign or update status.' : 'Drag your tasks across columns to update their status.' }}
                             </p>
+                            <div class="flex items-center gap-3">
+                            <button v-if="currentUser.role === 'Admin'" @click="openExportModal('dashboard')" class="px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                                <i class="fa-solid fa-file-export"></i> Export Full Report
+                            </button>
                             <div v-if="activeTimer" class="flex items-center gap-3 bg-white app-card px-4 py-2">
                                 <span class="text-[13px] text-gray-500 font-medium truncate max-w-[220px]"><i class="fa-solid fa-stopwatch text-accent mr-1.5"></i>{{ activeTimer.label }}</span>
                                 <span class="font-mono font-semibold text-gray-800 text-[15px]">{{ elapsedDisplay }}</span>
                                 <button @click="stopTimer()" class="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white transition" style="background: var(--color-stuck);">
                                     <i class="fa-solid fa-stop text-[11px] mr-1"></i> Stop
                                 </button>
+                            </div>
                             </div>
                         </div>
 
@@ -283,6 +288,12 @@
                             
                             <!-- Action Buttons: create client / single task rights conditionally visible to Admin only -->
                             <div class="flex items-center gap-2 w-full md:w-auto justify-end">
+                                <button @click="openExportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-file-export"></i> Export
+                                </button>
+                                <button v-if="currentUser.role === 'Admin'" @click="openImportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-file-import"></i> Bulk Upload
+                                </button>
                                 <button v-if="currentUser.role === 'Admin'" @click="showBulkEngine = !showBulkEngine" class="px-4 py-2 text-sm font-semibold border border-primary text-primary hover:bg-blue-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
                                     <i class="fa-solid fa-bolt"></i> Bulk Engine
                                 </button>
@@ -384,9 +395,17 @@
                                 <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
                                 <input v-model="clientSearch" type="text" placeholder="Search clients by name, PAN, group..." class="pl-10 pr-4 py-2.5 w-full text-[15px] rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
                             </div>
-                            <button v-if="currentUser.role === 'Admin'" @click="showClientModal = true" class="px-5 py-2.5 font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] w-full sm:w-auto">
-                                <i class="fa-solid fa-plus"></i> Add Client
-                            </button>
+                            <div class="flex items-center gap-2 w-full sm:w-auto">
+                                <button @click="openExportModal('clients')" class="px-4 py-2.5 font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
+                                    <i class="fa-solid fa-file-export"></i> Export
+                                </button>
+                                <button v-if="currentUser.role === 'Admin'" @click="openImportModal('clients')" class="px-4 py-2.5 font-semibold border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
+                                    <i class="fa-solid fa-file-import"></i> Bulk Upload
+                                </button>
+                                <button v-if="currentUser.role === 'Admin'" @click="showClientModal = true" class="px-5 py-2.5 font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
+                                    <i class="fa-solid fa-plus"></i> Add Client
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Clients Card Grid -->
@@ -438,9 +457,17 @@
                                 <h3 class="text-lg font-bold text-gray-800">Compliance Services Catalog</h3>
                                 <p class="text-xs text-gray-500 mt-0.5">Manage custom operational services and launch structured compliance tasks immediately.</p>
                             </div>
-                            <button v-if="currentUser.role === 'Admin'" @click="showServiceModal = true" class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1.5">
-                                <i class="fa-solid fa-folder-plus text-xs"></i> Create Service
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <button @click="openExportModal('services')" class="px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-export"></i> Export
+                                </button>
+                                <button v-if="currentUser.role === 'Admin'" @click="openImportModal('services')" class="px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-import"></i> Bulk Upload
+                                </button>
+                                <button v-if="currentUser.role === 'Admin'" @click="showServiceModal = true" class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-folder-plus text-xs"></i> Create Service
+                                </button>
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
@@ -489,9 +516,17 @@
                                 <h3 class="text-lg font-bold text-gray-800">Firm Personnel Directory</h3>
                                 <p class="text-xs text-gray-500 mt-0.5">Manage personnel accounts, user names, and operational roles for access control.</p>
                             </div>
-                            <button @click="showUserModal = true" class="px-4 py-2 bg-primary hover:bg-blue-800 text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1">
-                                <i class="fa-solid fa-plus text-xs"></i> Add Staff
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <button @click="openExportModal('users')" class="px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-export"></i> Export
+                                </button>
+                                <button @click="openImportModal('users')" class="px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-import"></i> Bulk Upload
+                                </button>
+                                <button @click="showUserModal = true" class="px-4 py-2 bg-primary hover:bg-blue-800 text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1">
+                                    <i class="fa-solid fa-plus text-xs"></i> Add Staff
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Staff Directory List -->
@@ -583,9 +618,14 @@
                                     <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
                                         <i class="fa-solid fa-book-open text-primary"></i> Timesheet Records Log
                                     </h3>
-                                    <span class="text-xs font-bold text-gray-400 uppercase bg-white border px-2 py-0.5 rounded shadow-sm">
-                                        Role: {{ currentUser.role }} view
-                                    </span>
+                                    <div class="flex items-center gap-2">
+                                        <button @click="openExportModal('timesheet')" class="px-3 py-1.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg font-semibold text-xs shadow-sm transition flex items-center gap-1.5">
+                                            <i class="fa-solid fa-file-export"></i> Export
+                                        </button>
+                                        <span class="text-xs font-bold text-gray-400 uppercase bg-white border px-2 py-0.5 rounded shadow-sm">
+                                            Role: {{ currentUser.role }} view
+                                        </span>
+                                    </div>
                                 </div>
                                 <div class="overflow-x-auto">
                                     <table class="w-full text-left border-collapse">
@@ -630,10 +670,18 @@
                                 <p class="text-xs text-gray-500 mt-0.5">Chronological audit log of all system mutations and vault decryptions. Use this reference to verify billing and timesheets.</p>
                             </div>
                             
-                            <!-- Search Logs -->
-                            <div class="relative w-full sm:w-80">
-                                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                                <input v-model="logSearch" type="text" placeholder="Search logs by action, details, user..." class="pl-10 pr-4 py-2 w-full text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary">
+                            <!-- Search Logs + Export -->
+                            <div class="flex items-center gap-2 w-full sm:w-auto">
+                                <div class="relative w-full sm:w-80">
+                                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                    <input v-model="logSearch" type="text" placeholder="Search logs by action, details, user..." class="pl-10 pr-4 py-2 w-full text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary">
+                                </div>
+                                <button @click="openExportModal('activity')" class="px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fa-solid fa-file-export"></i> Export
+                                </button>
+                                <button v-if="currentUser.role === 'Admin'" @click="openClearLogModal" class="px-4 py-2 border border-red-200 text-red-600 hover:bg-red-50 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fa-solid fa-trash-can"></i> Clear Log
+                                </button>
                             </div>
                         </div>
 
@@ -733,6 +781,9 @@
                                     <input v-model="reportEnd" type="date" class="rounded-xl border border-gray-200 p-2.5 text-[14px]">
                                 </div>
                             </template>
+                            <button @click="openExportModal('reports')" class="ml-auto px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[14px] shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                                <i class="fa-solid fa-file-export"></i> Export Report
+                            </button>
                         </div>
 
                         <!-- Three-column aggregations: Client / User / Service -->
@@ -1018,10 +1069,14 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Access Role</label>
-                            <select v-model="userForm.role" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-700">
-                                <option value="Employee">Employee (Timesheet + Task viewer)</option>
-                                <option value="Admin">Admin / Super User (Full management)</option>
-                            </select>
+                            <div v-if="editingUserId" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-gray-50 text-gray-600 flex items-center justify-between gap-2">
+                                <span class="font-semibold">{{ userForm.role }}</span>
+                                <span class="text-[11px] text-gray-400">Role can't be changed here</span>
+                            </div>
+                            <div v-else class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-gray-50 text-gray-600 flex items-center justify-between gap-2">
+                                <span class="font-semibold">Employee</span>
+                                <span class="text-[11px] text-gray-400">New staff are always Employees</span>
+                            </div>
                         </div>
                         <div class="flex justify-end gap-2 pt-2 border-t mt-4 text-xs font-semibold">
                             <button type="button" @click="closeUserModal" class="px-4 py-2 text-gray-500 hover:bg-gray-50 rounded-lg">Cancel</button>
@@ -1317,6 +1372,168 @@
                             <button @click="closeAssignModal" class="px-4 py-2 text-[14px] font-semibold text-gray-500 hover:bg-gray-50 rounded-lg transition">Cancel</button>
                             <button @click="confirmAssignModal" :disabled="!assignSelectedUser" class="px-5 py-2.5 text-[14px] bg-primary hover:bg-primary-hover text-white rounded-lg font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed">Assign</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+            <!-- MODAL: EXPORT (Excel / PDF) -->
+            <div v-if="showExportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg border border-gray-100 overflow-hidden max-h-[90vh] flex flex-col">
+                    <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
+                        <h4 class="text-base font-bold flex items-center gap-2"><i class="fa-solid fa-file-export"></i> Export {{ exportTitle }}</h4>
+                        <button @click="closeExportModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <div class="p-6 space-y-5 flex-1 overflow-y-auto">
+                        <!-- Format -->
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Format</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <button type="button" @click="exportFormat='xlsx'" :class="exportFormat==='xlsx' ? 'border-primary bg-accent-light text-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'" class="px-4 py-3 rounded-xl border-2 font-semibold text-sm transition flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-file-excel text-green-600"></i> Excel (.xlsx)
+                                </button>
+                                <button type="button" @click="exportFormat='pdf'" :class="exportFormat==='pdf' ? 'border-primary bg-accent-light text-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'" class="px-4 py-3 rounded-xl border-2 font-semibold text-sm transition flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-file-pdf text-red-600"></i> PDF
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Section mode: field selection -->
+                        <div v-if="exportMode==='section'">
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider">Columns to include</label>
+                                <div class="text-[11px] font-semibold">
+                                    <button type="button" @click="exportColumns.forEach(c=>exportFieldSel[c.key]=true)" class="text-accent hover:underline mr-2">Select all</button>
+                                    <button type="button" @click="exportColumns.forEach(c=>exportFieldSel[c.key]=false)" class="text-gray-400 hover:underline">Clear</button>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <label v-for="col in exportColumns" :key="col.key" class="flex items-center gap-2 text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-100">
+                                    <input type="checkbox" v-model="exportFieldSel[col.key]"> <span class="truncate">{{ col.label }}</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Section mode: row filters -->
+                        <div v-if="exportMode==='section' && exportFilters.length" class="space-y-3">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider">Filter rows</label>
+                            <div v-for="f in exportFilters" :key="f.key" class="flex items-center justify-between gap-3">
+                                <span class="text-sm text-gray-600">{{ f.label }}</span>
+                                <select v-model="f.value" class="rounded-xl border border-gray-200 p-2 text-sm bg-white min-w-[190px]">
+                                    <option v-for="opt in f.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Report mode: section selection -->
+                        <div v-if="exportMode==='report'">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Sections to include</label>
+                            <div class="space-y-2">
+                                <label v-for="(s,i) in exportSheets" :key="i" class="flex items-center gap-2 text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-100">
+                                    <input type="checkbox" v-model="s.selected"> <span>{{ s.name }}</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-2 px-6 py-4 border-t bg-gray-50/50 shrink-0">
+                        <button @click="closeExportModal" class="px-4 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Cancel</button>
+                        <button @click="confirmExport" :disabled="exportBusy" class="px-5 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-semibold transition shadow disabled:opacity-50 flex items-center gap-2">
+                            <i class="fa-solid" :class="exportBusy ? 'fa-spinner fa-spin' : 'fa-download'"></i>
+                            {{ exportBusy ? 'Generating…' : 'Download' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL: BULK CLIENT UPLOAD -->
+            <div v-if="showImportModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl border border-gray-100 overflow-hidden max-h-[90vh] flex flex-col">
+                    <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
+                        <h4 class="text-base font-bold flex items-center gap-2"><i class="fa-solid fa-file-import"></i> Bulk Upload {{ importConfig.title }}</h4>
+                        <button @click="closeImportModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <div class="p-6 space-y-5 flex-1 overflow-y-auto">
+                        <!-- Instructions -->
+                        <div class="bg-gray-50 border border-gray-150 rounded-xl p-4 text-sm text-gray-600 leading-relaxed">
+                            <p class="font-semibold text-gray-800 mb-2"><i class="fa-solid fa-circle-info text-accent mr-1.5"></i>Upload a <strong>.csv</strong> or <strong>.xlsx</strong> file. The first row must be a header row.</p>
+                            <ul class="space-y-1">
+                                <li v-for="r in importConfig.required" :key="r"><span class="inline-block w-2 h-2 rounded-full bg-red-500 mr-2 align-middle"></span><strong>{{ r }}</strong> — required</li>
+                                <li v-if="importConfig.optional && importConfig.optional.length"><span class="inline-block w-2 h-2 rounded-full bg-gray-300 mr-2 align-middle"></span>{{ importConfig.optional.join(', ') }} — optional</li>
+                            </ul>
+                            <p class="mt-2 text-xs text-gray-500">{{ importConfig.note }} Unknown columns are ignored.</p>
+                        </div>
+                        <!-- Template download -->
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-sm text-gray-500">Need the format?</span>
+                            <button @click="downloadImportTemplate('csv')" class="text-sm font-semibold text-accent hover:underline">Download CSV template</button>
+                            <span class="text-gray-300">·</span>
+                            <button @click="downloadImportTemplate('xlsx')" class="text-sm font-semibold text-accent hover:underline">Excel template</button>
+                        </div>
+                        <!-- File picker -->
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Choose file</label>
+                            <input type="file" accept=".csv,.xlsx,.xlsm" @change="onImportFileChange" class="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-hover cursor-pointer border border-gray-200 rounded-xl p-2">
+                            <p v-if="importFileName" class="text-xs text-gray-500 mt-1.5"><i class="fa-solid fa-paperclip mr-1"></i>{{ importFileName }}</p>
+                        </div>
+                        <!-- Error -->
+                        <div v-if="importError" class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>{{ importError }}</div>
+                        <!-- Result -->
+                        <div v-if="importResult" class="space-y-3">
+                            <div class="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm font-semibold flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <i class="fa-solid fa-circle-check"></i>
+                                <span>Imported {{ importResult.created }} of {{ importResult.total }} rows.</span>
+                                <span v-if="importResult.skipped" class="text-amber-700">{{ importResult.skipped }} skipped.</span>
+                            </div>
+                            <div v-if="importResult.errors && importResult.errors.length" class="border border-amber-200 rounded-xl overflow-hidden">
+                                <div class="bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 uppercase tracking-wide">Skipped rows</div>
+                                <div class="max-h-40 overflow-y-auto divide-y divide-gray-50 text-sm">
+                                    <div v-for="(err,i) in importResult.errors" :key="i" class="px-4 py-2 flex gap-3">
+                                        <span class="font-mono text-gray-400 shrink-0">Row {{ err.row }}</span>
+                                        <span class="text-gray-600">{{ err.message }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-2 px-6 py-4 border-t bg-gray-50/50 shrink-0">
+                        <button @click="closeImportModal" class="px-4 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">{{ importResult ? 'Close' : 'Cancel' }}</button>
+                        <button @click="submitImport" :disabled="importBusy" class="px-5 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-semibold transition shadow disabled:opacity-50 flex items-center gap-2">
+                            <i class="fa-solid" :class="importBusy ? 'fa-spinner fa-spin' : 'fa-upload'"></i>
+                            {{ importBusy ? 'Uploading…' : 'Upload & Import' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL: CLEAR ACTIVITY LOG (admin) -->
+            <div v-if="showClearLogModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-100 overflow-hidden">
+                    <div class="bg-red-600 text-white px-6 py-4 flex items-center justify-between">
+                        <h4 class="text-base font-bold flex items-center gap-2"><i class="fa-solid fa-trash-can"></i> Clear Activity Log</h4>
+                        <button @click="closeClearLogModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <div class="p-6 space-y-5">
+                        <div class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3.5 text-sm leading-relaxed">
+                            <i class="fa-solid fa-triangle-exclamation mr-1.5"></i>
+                            This <strong>permanently deletes</strong> audit-log entries in the chosen date range. This cannot be undone.
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">From</label>
+                                <input v-model="clearFrom" type="date" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">To</label>
+                                <input v-model="clearTo" type="date" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500">Both dates are inclusive. To clear everything, pick a wide range (e.g. from your firm's start date to today).</p>
+                        <div v-if="clearLogError" class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm"><i class="fa-solid fa-circle-exclamation mr-1.5"></i>{{ clearLogError }}</div>
+                    </div>
+                    <div class="flex justify-end gap-2 px-6 py-4 border-t bg-gray-50/50">
+                        <button @click="closeClearLogModal" class="px-4 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Cancel</button>
+                        <button @click="confirmClearLog" :disabled="clearLogBusy" class="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition shadow disabled:opacity-50 flex items-center gap-2">
+                            <i class="fa-solid" :class="clearLogBusy ? 'fa-spinner fa-spin' : 'fa-trash-can'"></i>
+                            {{ clearLogBusy ? 'Clearing…' : 'Clear Entries' }}
+                        </button>
                     </div>
                 </div>
             </div>

@@ -1,5 +1,8 @@
-from flask import Flask, request, jsonify, send_from_directory, abort, session
+from flask import Flask, request, jsonify, send_from_directory, abort, session, send_file
 from functools import wraps
+from io import BytesIO
+from datetime import datetime
+import re
 import ipaddress
 import os
 import time
@@ -7,7 +10,11 @@ import threading
 from . import crud
 from . import security
 from . import validation
+from . import exporter
+from . import importer
 from .validation import ValidationError
+from .exporter import ExportError
+from .importer import ImportFileError
 from .database import get_db, init_db
 from .seed import seed_data
 
@@ -84,6 +91,17 @@ def _json_error(e):
 # Invalid user input -> 400 with a clear message
 @app.errorhandler(ValidationError)
 def _validation_error(e):
+    return jsonify({"status": "error", "message": e.message}), 400
+
+
+# Bad export spec / unreadable upload -> 400 with a clear message
+@app.errorhandler(ExportError)
+def _export_error(e):
+    return jsonify({"status": "error", "message": e.message}), 400
+
+
+@app.errorhandler(ImportFileError)
+def _import_error(e):
     return jsonify({"status": "error", "message": e.message}), 400
 
 
@@ -222,6 +240,28 @@ def read_activity_logs():
     db.close()
     return jsonify(logs)
 
+@app.route('/api/activity-logs/clear', methods=['POST'])
+@admin_required
+def clear_activity_logs():
+    """Admin-only: permanently delete audit-log entries within a date range
+    (inclusive, YYYY-MM-DD). The deletion itself is logged afterwards so there
+    is always a record that a clear happened."""
+    data = get_body()
+    validation.require(data, 'from_date', 'to_date')
+    from_date = str(data['from_date']).strip()
+    to_date = str(data['to_date']).strip()
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', from_date) or not re.match(r'^\d{4}-\d{2}-\d{2}$', to_date):
+        abort(400, description="Dates must be in YYYY-MM-DD format.")
+    if from_date > to_date:
+        abort(400, description="'From' date cannot be after 'To' date.")
+    db = get_db()
+    deleted = crud.clear_activity_logs(db, from_date, to_date)
+    crud.log_user_action(db, current_username(), "Activity Log Cleared",
+                         f"Cleared {deleted} log entr{'y' if deleted == 1 else 'ies'} "
+                         f"from {from_date} to {to_date}")
+    db.close()
+    return jsonify({"status": "success", "deleted": deleted})
+
 @app.route('/api/tasks', methods=['GET'])
 @login_required
 def read_tasks():
@@ -324,6 +364,223 @@ def read_services():
     db.close()
     return jsonify(services)
 
+
+# --- Exports (Excel / PDF) ----------------------------------------------------
+def _safe_filename(name, ext):
+    slug = re.sub(r'[^A-Za-z0-9._-]+', '_', str(name or 'report')).strip('_') or 'report'
+    stamp = datetime.now().strftime('%Y%m%d_%H%M')
+    return f"{slug[:60]}_{stamp}.{ext}"
+
+
+@app.route('/api/export', methods=['POST'])
+@login_required
+def export_report():
+    """Render a client-supplied spec (sheets/columns/rows) to .xlsx or PDF.
+
+    The caller already holds the data and decides which fields/rows to include;
+    this endpoint only renders. Vault passwords are never part of a spec.
+    """
+    fmt = (request.args.get('format') or 'xlsx').lower()
+    spec = get_body()
+    content, mimetype, ext = exporter.render(spec, fmt)
+    crud_db = get_db()
+    title = spec.get('title') if isinstance(spec, dict) else 'Report'
+    sheet_count = len(spec.get('sheets', [])) if isinstance(spec, dict) else 0
+    crud.log_user_action(crud_db, current_username(), "Data Exported",
+                         f"Exported '{title}' as {ext.upper()} ({sheet_count} section(s))")
+    crud_db.close()
+    return send_file(BytesIO(content), mimetype=mimetype, as_attachment=True,
+                     download_name=_safe_filename(title, ext))
+
+
+# --- Bulk import (CSV / Excel) for clients, services, users, tasks ------------
+# Each validator returns (rows_ready_for_crud, errors[]). Validators get the db
+# so they can resolve names to ids and check uniqueness.
+def _validate_clients(db, parsed):
+    valid, errors = [], []
+    for rec in parsed:
+        rn = rec.get('_row', '?')
+        name = (rec.get('name') or '').strip()
+        if not name:
+            errors.append({"row": rn, "message": "Missing required field: Name"}); continue
+        pan = (rec.get('pan') or '').strip().upper()
+        gstin = (rec.get('gstin') or '').strip().upper()
+        try:
+            validation.validate_pan(pan)
+            validation.validate_gstin(gstin)
+        except ValidationError as ve:
+            errors.append({"row": rn, "message": ve.message}); continue
+        valid.append({
+            "name": name, "entity_type": (rec.get('entity_type') or '').strip(),
+            "pan": pan, "gstin": gstin, "group": (rec.get('group') or '').strip(),
+            "physical_folder_location": (rec.get('physical_folder_location') or '').strip(),
+            "data_location": (rec.get('data_location') or '').strip(),
+        })
+    return valid, errors
+
+
+def _validate_services(db, parsed):
+    valid, errors = [], []
+    for rec in parsed:
+        rn = rec.get('_row', '?')
+        name = (rec.get('name') or '').strip()
+        if not name:
+            errors.append({"row": rn, "message": "Missing required field: Name"}); continue
+        due_day = 15
+        ddd = (rec.get('default_due_day') or '').strip()
+        if ddd:
+            try:
+                due_day = validation.validate_int_range(ddd, 1, 31, 'Default Due Day')
+            except ValidationError as ve:
+                errors.append({"row": rn, "message": ve.message}); continue
+        valid.append({
+            "name": name, "description": (rec.get('description') or '').strip(),
+            "checklist": (rec.get('checklist') or '').strip(), "default_due_day": due_day,
+        })
+    return valid, errors
+
+
+def _validate_users(db, parsed):
+    valid, errors = [], []
+    cursor = db.cursor()
+    cursor.execute('SELECT lower(username) AS u FROM users')
+    existing = {r['u'] for r in cursor.fetchall()}
+    seen = set()
+    for rec in parsed:
+        rn = rec.get('_row', '?')
+        full_name = (rec.get('full_name') or '').strip()
+        uname = (rec.get('username') or '').strip()
+        pwd = (rec.get('password') or '').strip()
+        miss = [lbl for lbl, v in (('Full Name', full_name), ('Username', uname), ('Password', pwd)) if not v]
+        if miss:
+            errors.append({"row": rn, "message": "Missing required field(s): " + ", ".join(miss)}); continue
+        key = uname.lower()
+        if key in existing or key in seen:
+            errors.append({"row": rn, "message": f"Username '{uname}' already exists."}); continue
+        seen.add(key)
+        valid.append({"full_name": full_name, "username": uname, "password": pwd})
+    return valid, errors
+
+
+def _validate_tasks(db, parsed):
+    valid, errors = [], []
+    cursor = db.cursor()
+    cursor.execute('SELECT id, lower(name) AS n FROM client_master')
+    clients = {r['n']: r['id'] for r in cursor.fetchall()}
+    cursor.execute('SELECT id, lower(name) AS n FROM service_master')
+    services = {r['n']: r['id'] for r in cursor.fetchall()}
+    cursor.execute('SELECT id, lower(full_name) AS n FROM users')
+    staff = {r['n']: r['id'] for r in cursor.fetchall()}
+    for rec in parsed:
+        rn = rec.get('_row', '?')
+        cname = (rec.get('client') or '').strip()
+        sname = (rec.get('service') or '').strip()
+        fy = (rec.get('financial_year') or '').strip()
+        period = (rec.get('period') or '').strip()
+        miss = [lbl for lbl, v in (('Client', cname), ('Service', sname),
+                                   ('Financial Year', fy), ('Period', period)) if not v]
+        if miss:
+            errors.append({"row": rn, "message": "Missing required field(s): " + ", ".join(miss)}); continue
+        cid = clients.get(cname.lower())
+        if not cid:
+            errors.append({"row": rn, "message": f"Client '{cname}' not found."}); continue
+        sid = services.get(sname.lower())
+        if not sid:
+            errors.append({"row": rn, "message": f"Service '{sname}' not found."}); continue
+        try:
+            validation.validate_financial_year(fy)
+        except ValidationError as ve:
+            errors.append({"row": rn, "message": ve.message}); continue
+        status = (rec.get('status') or 'Working').strip().title() or 'Working'
+        if status not in ('Working', 'Pending', 'Completed'):
+            errors.append({"row": rn, "message": f"Invalid status '{status}'. Use Working, Pending or Completed."}); continue
+        assignee_id = None
+        an = (rec.get('assigned_to') or '').strip()
+        if an:
+            assignee_id = staff.get(an.lower())
+            if not assignee_id:
+                errors.append({"row": rn, "message": f"Staff '{an}' not found."}); continue
+        valid.append({
+            "client_id": cid, "service_id": sid, "financial_year": fy, "period": period,
+            "status": status, "assigned_to": assignee_id,
+            "due_date": (rec.get('due_date') or '').strip() or None,
+        })
+    return valid, errors
+
+
+_IMPORT_HANDLERS = {
+    "clients":  (_validate_clients,  crud.import_clients,  "Clients Imported"),
+    "services": (_validate_services, crud.import_services, "Services Imported"),
+    "users":    (_validate_users,    crud.import_users,    "Users Imported"),
+    "tasks":    (_validate_tasks,    crud.import_tasks,    "Tasks Imported"),
+}
+
+
+@app.route('/api/import/<entity>/template', methods=['GET'])
+@admin_required
+def import_template(entity):
+    """Download a ready-to-fill upload template (CSV or Excel) for an entity."""
+    if entity not in importer.ENTITY_CONFIGS:
+        abort(404, description="Unknown import type.")
+    cfg = importer.ENTITY_CONFIGS[entity]
+    cols = cfg['template_columns']
+    fmt = (request.args.get('format') or 'csv').lower()
+
+    if fmt in ('xlsx', 'excel'):
+        spec = {
+            "title": f"{cfg['label']} Import Template",
+            "sheets": [{
+                "name": cfg['label'],
+                "columns": [{"key": k, "label": f"{lbl}{' *' if req else ''}"} for k, lbl, req in cols],
+                "rows": [cfg['sample']],
+            }],
+        }
+        content, mimetype, _ext = exporter.render(spec, 'xlsx')
+        return send_file(BytesIO(content), mimetype=mimetype, as_attachment=True,
+                         download_name=f"{entity}_import_template.xlsx")
+
+    import csv as _csv
+    from io import StringIO
+    sio = StringIO()
+    writer = _csv.writer(sio)
+    writer.writerow([f"{lbl}{' *' if req else ''}" for _k, lbl, req in cols])
+    writer.writerow([cfg['sample'].get(k, '') for k, _l, _r in cols])
+    return send_file(BytesIO(sio.getvalue().encode('utf-8-sig')), mimetype='text/csv',
+                     as_attachment=True, download_name=f"{entity}_import_template.csv")
+
+
+@app.route('/api/import/<entity>', methods=['POST'])
+@admin_required
+def import_entity(entity):
+    """Validate and import an uploaded file. Returns a per-row error report.
+    Valid rows are imported even if other rows fail."""
+    if entity not in _IMPORT_HANDLERS:
+        abort(404, description="Unknown import type.")
+    if 'file' not in request.files:
+        abort(400, description="No file uploaded.")
+    upload = request.files['file']
+    if not upload or not upload.filename:
+        abort(400, description="No file selected.")
+    data = upload.read()
+    if not data:
+        abort(400, description="The uploaded file is empty.")
+
+    parsed = importer.parse_upload(upload.filename, data, entity)
+    validate_fn, insert_fn, log_action = _IMPORT_HANDLERS[entity]
+    db = get_db()
+    try:
+        valid, errors = validate_fn(db, parsed)
+        created = insert_fn(db, valid) if valid else 0
+        crud.log_user_action(db, current_username(), log_action,
+                             f"Bulk {entity} import: {created} created, {len(errors)} skipped "
+                             f"(from '{upload.filename}')")
+    finally:
+        db.close()
+    return jsonify({
+        "status": "success", "created": created, "skipped": len(errors),
+        "total": len(parsed), "errors": errors[:200],
+    })
+
 @app.route('/api/credentials', methods=['POST'])
 @login_required
 def save_credential():
@@ -379,7 +636,13 @@ def decrypt_credential(cred_id):
 @admin_required
 def create_single_task():
     data = get_body()
-    validation.require(data, 'client_id', 'service_id', 'financial_year', 'period')
+    # `period` is only user-supplied for one-time tasks. For recurring plans
+    # (monthly/quarterly/six_monthly/annual) the period is generated per-instance
+    # by crud.create_task, so the modal hides that field and it arrives empty.
+    if data.get('recurrence_type', 'one_time') == 'one_time':
+        validation.require(data, 'client_id', 'service_id', 'financial_year', 'period')
+    else:
+        validation.require(data, 'client_id', 'service_id', 'financial_year')
     validation.validate_financial_year(data.get('financial_year'))
     username = current_username()
     db = get_db()
@@ -459,12 +722,14 @@ def read_users():
 @admin_required
 def create_single_user():
     data = get_body()
-    validation.require(data, 'username', 'password', 'role', 'full_name')
-    validation.validate_role(data.get('role'))
+    validation.require(data, 'username', 'password', 'full_name')
+    # Staff created here are always Employees. New Admins cannot be created via
+    # this endpoint (server-enforced, so it can't be bypassed from the client).
+    data['role'] = 'Employee'
     username = current_username()
     db = get_db()
     result = crud.create_user(db, data)
-    details = f"Added staff account: '{data['username']}' ({data['role']})"
+    details = f"Added staff account: '{data['username']}' (Employee)"
     crud.log_user_action(db, username, "User Added", details)
     db.close()
     return jsonify(result)
@@ -680,10 +945,19 @@ def update_service_details(service_id):
 @admin_required
 def update_user_details(user_id):
     data = get_body()
-    validation.require(data, 'username', 'role', 'full_name')
-    validation.validate_role(data.get('role'))
+    validation.require(data, 'username', 'full_name')
     username = current_username()
     db = get_db()
+    # Role is immutable through this endpoint: keep whatever the user already has.
+    # This prevents promoting an Employee to Admin (and accidentally demoting the
+    # primary admin) regardless of what the client sends.
+    cursor = db.cursor()
+    cursor.execute('SELECT role FROM users WHERE id = ?', (user_id,))
+    existing = cursor.fetchone()
+    if not existing:
+        db.close()
+        abort(404, description="User not found")
+    data['role'] = existing['role']
     updated = crud.update_user(db, user_id, data)
     if updated:
         details = f"Updated staff account (ID: {user_id}): '{data['username']}'"

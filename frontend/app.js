@@ -609,9 +609,13 @@ createApp({
                 if (res.ok) {
                     closeTaskModal();
                     await fetchData();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.message || "Could not save the task. Please check the fields and try again.");
                 }
             } catch (error) {
                 console.error("Error saving task details:", error);
+                alert("Could not save the task. Please try again.");
             }
         };
 
@@ -1146,6 +1150,390 @@ createApp({
             completionTask.value = null;
         };
 
+        // ===================== Exports (Excel / PDF) =====================
+        // The frontend already holds every row and all filter state, so it builds a
+        // spec (sheets -> columns -> rows) and posts it to /api/export, which renders
+        // a real .xlsx workbook or a paginated PDF. Vault passwords are never included.
+        const showExportModal = ref(false);
+        const exportBusy = ref(false);
+        const exportFormat = ref('xlsx');        // 'xlsx' | 'pdf'
+        const exportTitle = ref('');
+        const exportMode = ref('section');       // 'section' | 'report'
+        const exportColumns = ref([]);           // [{key,label}]  (section mode)
+        const exportFieldSel = ref({});          // key -> bool     (section mode)
+        const exportFilters = ref([]);           // [{key,label,options,match,value}]
+        const exportSheets = ref([]);            // [{name,columns,rowsFn,selected}] (report mode)
+        let exportRowsFn = null;                 // () => rows (section mode; kept non-reactive)
+
+        const triggerDownload = (blob, filename) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1500);
+        };
+
+        const filenameFromResponse = (res, fallback) => {
+            const cd = res.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename="?([^"]+)"?/);
+            return m ? m[1] : fallback;
+        };
+
+        const downloadExport = async (spec, format) => {
+            exportBusy.value = true;
+            try {
+                const res = await apiFetch(`/api/export?format=${format}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(spec)
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.message || 'Export failed.');
+                    return false;
+                }
+                const blob = await res.blob();
+                triggerDownload(blob, filenameFromResponse(res, `export.${format === 'pdf' ? 'pdf' : 'xlsx'}`));
+                return true;
+            } catch (e) {
+                console.error('Export error', e);
+                alert('Export failed. Please try again.');
+                return false;
+            } finally {
+                exportBusy.value = false;
+            }
+        };
+
+        const fmtDur = (h, m) => `${h || 0}h ${m || 0}m`;
+        const ALL = '__all__';
+
+        // Reusable column sets
+        const TASK_COLS = [
+            { key: 'id', label: 'Task ID' },
+            { key: 'client_name', label: 'Client' },
+            { key: 'service_name', label: 'Service' },
+            { key: 'financial_year', label: 'Financial Year' },
+            { key: 'period', label: 'Period' },
+            { key: 'status', label: 'Status' },
+            { key: 'assigned_to_name', label: 'Assigned To' },
+            { key: 'due_date', label: 'Due Date' }
+        ];
+        const CLIENT_COLS = [
+            { key: 'id', label: 'Client ID' },
+            { key: 'name', label: 'Name' },
+            { key: 'entity_type', label: 'Entity Type' },
+            { key: 'pan', label: 'PAN' },
+            { key: 'gstin', label: 'GSTIN' },
+            { key: 'group_name', label: 'Group' },
+            { key: 'assigned_to_name', label: 'Assigned Staff' },
+            { key: 'physical_folder_location', label: 'Folder Location' },
+            { key: 'data_location', label: 'Data Location' }
+        ];
+        const TS_COLS = [
+            { key: 'id', label: 'Timesheet ID' },
+            { key: 'log_date', label: 'Date' },
+            { key: 'employee_name', label: 'Employee' },
+            { key: 'client_name', label: 'Client' },
+            { key: 'service_name', label: 'Service' },
+            { key: 'period', label: 'Period' },
+            { key: 'duration', label: 'Duration' },
+            { key: 'description', label: 'Description' }
+        ];
+
+        const taskRow = (t) => ({ ...t, assigned_to_name: t.assigned_to_name || 'Unassigned' });
+        const clientRow = (c) => ({ ...c, group_name: c.group_name || 'Individual', assigned_to_name: c.assigned_to_name || 'Unassigned' });
+        const tsRow = (ts) => ({ ...ts, duration: fmtDur(ts.hours, ts.minutes) });
+
+        const distinctOptions = (arr, key, allLabel) => {
+            const seen = [];
+            arr.forEach(o => { const v = o[key]; if (v && !seen.includes(v)) seen.push(v); });
+            return [{ value: ALL, label: allLabel }, ...seen.map(v => ({ value: v, label: v }))];
+        };
+
+        const getSectionConfig = (key) => {
+            switch (key) {
+                case 'tasks':
+                    return {
+                        title: 'Tasks', mode: 'section', columns: TASK_COLS,
+                        rowsFn: () => filteredTasks.value.map(taskRow),
+                        filters: [{
+                            key: 'status', label: 'Status',
+                            options: [{ value: ALL, label: 'All statuses' }, { value: 'Working', label: 'Working' },
+                                      { value: 'Pending', label: 'Pending' }, { value: 'Completed', label: 'Completed' },
+                                      { value: 'Unassigned', label: 'Unassigned' }],
+                            match: (r, v) => v === 'Unassigned' ? !r.assigned_to : r.status === v
+                        }]
+                    };
+                case 'clients':
+                    return {
+                        title: 'Clients', mode: 'section', columns: CLIENT_COLS,
+                        rowsFn: () => filteredClients.value.map(clientRow),
+                        filters: [
+                            { key: 'entity_type', label: 'Entity type', options: distinctOptions(clients.value, 'entity_type', 'All entities'),
+                              match: (r, v) => r.entity_type === v },
+                            { key: 'group_name', label: 'Group', options: distinctOptions(clients.value.map(clientRow), 'group_name', 'All groups'),
+                              match: (r, v) => r.group_name === v }
+                        ]
+                    };
+                case 'services':
+                    return {
+                        title: 'Services', mode: 'section',
+                        columns: [{ key: 'id', label: 'Service ID' }, { key: 'name', label: 'Service' },
+                                  { key: 'description', label: 'Description' }, { key: 'default_due_day', label: 'Default Due Day' },
+                                  { key: 'checklist', label: 'Checklist' }],
+                        rowsFn: () => services.value.map(s => ({ ...s, checklist: parseChecklist(s.checklist_json).join(', ') })),
+                        filters: []
+                    };
+                case 'users':
+                    return {
+                        title: 'Staff', mode: 'section',
+                        columns: [{ key: 'id', label: 'User ID' }, { key: 'full_name', label: 'Full Name' },
+                                  { key: 'username', label: 'Username' }, { key: 'role', label: 'Role' }],
+                        rowsFn: () => usersList.value.slice(),
+                        filters: [{ key: 'role', label: 'Role',
+                                    options: [{ value: ALL, label: 'All roles' }, { value: 'Admin', label: 'Admin' }, { value: 'Employee', label: 'Employee' }],
+                                    match: (r, v) => r.role === v }]
+                    };
+                case 'timesheet':
+                    return {
+                        title: 'Timesheets', mode: 'section', columns: TS_COLS,
+                        rowsFn: () => filteredTimesheets.value.map(tsRow), filters: []
+                    };
+                case 'activity':
+                    return {
+                        title: 'Activity Log', mode: 'section',
+                        columns: [{ key: 'id', label: 'Log ID' }, { key: 'timestamp', label: 'Timestamp' },
+                                  { key: 'username', label: 'User' }, { key: 'action', label: 'Action' },
+                                  { key: 'details', label: 'Details' }],
+                        rowsFn: () => filteredLogs.value.slice(), filters: []
+                    };
+                case 'reports': {
+                    const aggCols = [{ key: 'name', label: 'Name' }, { key: 'duration', label: 'Time Logged' }, { key: 'count', label: 'Logs' }];
+                    const aggRows = (rows) => rows.map(r => ({ name: r.name, duration: fmtDur(r.hours, r.minutes), count: r.count }));
+                    return {
+                        title: 'Work Report', mode: 'report',
+                        sheets: [
+                            { name: 'Client-wise', columns: aggCols, rowsFn: () => aggRows(reportClientRows.value) },
+                            { name: 'User-wise', columns: aggCols, rowsFn: () => aggRows(reportUserRows.value) },
+                            { name: 'Service-wise', columns: aggCols, rowsFn: () => aggRows(reportServiceRows.value) }
+                        ]
+                    };
+                }
+                case 'dashboard': {
+                    const byStatus = (st) => tasks.value.filter(t => t.status === st).map(taskRow);
+                    const unassigned = () => tasks.value.filter(t => !t.assigned_to).map(taskRow);
+                    const staffRows = () => usersList.value.map(u => {
+                        const ut = tasks.value.filter(t => t.assigned_to === u.id);
+                        let mins = 0;
+                        timesheets.value.forEach(ts => { if (ts.employee_name === u.full_name) mins += (ts.hours || 0) * 60 + (ts.minutes || 0); });
+                        return {
+                            name: u.full_name, role: u.role,
+                            working: ut.filter(t => t.status === 'Working').length,
+                            pending: ut.filter(t => t.status === 'Pending').length,
+                            completed: ut.filter(t => t.status === 'Completed').length,
+                            total: ut.length, time_logged: fmtDur(Math.floor(mins / 60), mins % 60)
+                        };
+                    });
+                    const summaryRows = () => {
+                        let mins = 0;
+                        timesheets.value.forEach(ts => { mins += (ts.hours || 0) * 60 + (ts.minutes || 0); });
+                        return [
+                            { metric: 'Total Clients', value: clients.value.length },
+                            { metric: 'Total Tasks', value: tasks.value.length },
+                            { metric: 'Working', value: tasks.value.filter(t => t.status === 'Working').length },
+                            { metric: 'Pending', value: tasks.value.filter(t => t.status === 'Pending').length },
+                            { metric: 'Completed', value: tasks.value.filter(t => t.status === 'Completed').length },
+                            { metric: 'Unassigned Tasks', value: tasks.value.filter(t => !t.assigned_to).length },
+                            { metric: 'Total Staff', value: usersList.value.length },
+                            { metric: 'Total Time Logged', value: fmtDur(Math.floor(mins / 60), mins % 60) }
+                        ];
+                    };
+                    const staffCols = [{ key: 'name', label: 'Staff' }, { key: 'role', label: 'Role' },
+                                       { key: 'working', label: 'Working' }, { key: 'pending', label: 'Pending' },
+                                       { key: 'completed', label: 'Completed' }, { key: 'total', label: 'Total' },
+                                       { key: 'time_logged', label: 'Time Logged' }];
+                    return {
+                        title: 'Office Full Report', mode: 'report',
+                        sheets: [
+                            { name: 'Summary', columns: [{ key: 'metric', label: 'Metric' }, { key: 'value', label: 'Value' }], rowsFn: summaryRows },
+                            { name: 'Tasks - Working', columns: TASK_COLS, rowsFn: () => byStatus('Working') },
+                            { name: 'Tasks - Pending', columns: TASK_COLS, rowsFn: () => byStatus('Pending') },
+                            { name: 'Tasks - Completed', columns: TASK_COLS, rowsFn: () => byStatus('Completed') },
+                            { name: 'Tasks - Unassigned', columns: TASK_COLS, rowsFn: unassigned },
+                            { name: 'Clients', columns: CLIENT_COLS, rowsFn: () => clients.value.map(clientRow) },
+                            { name: 'Staff Workload', columns: staffCols, rowsFn: staffRows },
+                            { name: 'Timesheets', columns: TS_COLS, rowsFn: () => timesheets.value.map(tsRow) }
+                        ]
+                    };
+                }
+                default:
+                    return { title: 'Export', mode: 'section', columns: [], rowsFn: () => [], filters: [] };
+            }
+        };
+
+        const openExportModal = (sectionKey) => {
+            const cfg = getSectionConfig(sectionKey);
+            exportTitle.value = cfg.title;
+            exportFormat.value = 'xlsx';
+            exportMode.value = cfg.mode;
+            if (cfg.mode === 'report') {
+                exportSheets.value = cfg.sheets.map(s => ({ name: s.name, columns: s.columns, rowsFn: s.rowsFn, selected: true }));
+                exportColumns.value = [];
+                exportFilters.value = [];
+                exportRowsFn = null;
+            } else {
+                exportColumns.value = cfg.columns;
+                const sel = {};
+                cfg.columns.forEach(c => { sel[c.key] = true; });
+                exportFieldSel.value = sel;
+                exportRowsFn = cfg.rowsFn;
+                exportFilters.value = (cfg.filters || []).map(f => ({ ...f, value: f.options[0].value }));
+            }
+            showExportModal.value = true;
+        };
+
+        const closeExportModal = () => { showExportModal.value = false; };
+
+        const confirmExport = async () => {
+            let spec;
+            if (exportMode.value === 'report') {
+                const sheets = exportSheets.value.filter(s => s.selected)
+                    .map(s => ({ name: s.name, columns: s.columns, rows: s.rowsFn() }));
+                if (!sheets.length) { alert('Select at least one section to export.'); return; }
+                spec = { title: exportTitle.value, sheets };
+            } else {
+                const cols = exportColumns.value.filter(c => exportFieldSel.value[c.key]);
+                if (!cols.length) { alert('Select at least one field to export.'); return; }
+                let rows = exportRowsFn ? exportRowsFn() : [];
+                exportFilters.value.forEach(f => {
+                    if (f.value !== ALL) rows = rows.filter(r => f.match(r, f.value));
+                });
+                spec = { title: exportTitle.value, sheets: [{ name: exportTitle.value, columns: cols, rows }] };
+            }
+            const ok = await downloadExport(spec, exportFormat.value);
+            if (ok) showExportModal.value = false;
+        };
+
+        // ===================== Bulk import (CSV / Excel) =====================
+        // One reusable modal drives clients / services / users / tasks uploads.
+        const IMPORT_CONFIGS = {
+            clients: {
+                title: 'Clients',
+                required: ['Name'],
+                optional: ['Entity Type', 'PAN', 'GSTIN', 'Group', 'Folder Location', 'Data Location'],
+                note: 'PAN & GSTIN are format-checked when present. New groups are created automatically.'
+            },
+            services: {
+                title: 'Services',
+                required: ['Name'],
+                optional: ['Description', 'Checklist', 'Default Due Day'],
+                note: 'Checklist items: separate with commas. Default Due Day is a day of the month (1–31); blank defaults to 15.'
+            },
+            users: {
+                title: 'Staff Users',
+                required: ['Full Name', 'Username', 'Password'],
+                optional: [],
+                note: 'All imported staff are created with the Employee role. Usernames must be unique. Tell staff to change their password after first login.'
+            },
+            tasks: {
+                title: 'Tasks',
+                required: ['Client', 'Service', 'Financial Year', 'Period'],
+                optional: ['Status', 'Assigned To', 'Due Date'],
+                note: 'Client & Service must exactly match names that already exist. Assigned To must match a staff full name. Status defaults to Working.'
+            }
+        };
+
+        const showImportModal = ref(false);
+        const importBusy = ref(false);
+        const importError = ref('');
+        const importFileName = ref('');
+        const importResult = ref(null);
+        const importEntity = ref('clients');
+        const importConfig = ref(IMPORT_CONFIGS.clients);
+        let importFileObj = null;   // plain File (kept out of Vue reactivity for FormData)
+
+        const openImportModal = (entity = 'clients') => {
+            importEntity.value = entity;
+            importConfig.value = IMPORT_CONFIGS[entity] || IMPORT_CONFIGS.clients;
+            importError.value = ''; importResult.value = null;
+            importFileName.value = ''; importFileObj = null;
+            showImportModal.value = true;
+        };
+        const closeImportModal = () => { showImportModal.value = false; };
+
+        const onImportFileChange = (ev) => {
+            const f = ev.target.files && ev.target.files[0];
+            importFileObj = f || null;
+            importFileName.value = f ? f.name : '';
+            importError.value = ''; importResult.value = null;
+        };
+
+        const downloadImportTemplate = async (format) => {
+            try {
+                const res = await apiFetch(`/api/import/${importEntity.value}/template?format=${format}`);
+                if (!res.ok) { alert('Could not download template.'); return; }
+                const blob = await res.blob();
+                triggerDownload(blob, filenameFromResponse(res, `${importEntity.value}_import_template.${format === 'xlsx' ? 'xlsx' : 'csv'}`));
+            } catch (e) { alert('Could not download template.'); }
+        };
+
+        const submitImport = async () => {
+            if (!importFileObj) { importError.value = 'Please choose a .csv or .xlsx file first.'; return; }
+            importBusy.value = true; importError.value = ''; importResult.value = null;
+            try {
+                const fd = new FormData();
+                fd.append('file', importFileObj);
+                const res = await apiFetch(`/api/import/${importEntity.value}`, { method: 'POST', body: fd });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) { importError.value = data.message || 'Import failed.'; return; }
+                importResult.value = data;
+                await fetchData();
+            } catch (e) {
+                console.error('Import error', e);
+                importError.value = 'Import failed. Please try again.';
+            } finally {
+                importBusy.value = false;
+            }
+        };
+
+        // ===================== Clear activity log (admin) =====================
+        const showClearLogModal = ref(false);
+        const clearLogBusy = ref(false);
+        const clearLogError = ref('');
+        const clearFrom = ref(today);
+        const clearTo = ref(today);
+
+        const openClearLogModal = () => {
+            clearFrom.value = today; clearTo.value = today;
+            clearLogError.value = '';
+            showClearLogModal.value = true;
+        };
+        const closeClearLogModal = () => { showClearLogModal.value = false; };
+
+        const confirmClearLog = async () => {
+            if (!clearFrom.value || !clearTo.value) { clearLogError.value = 'Please choose both dates.'; return; }
+            if (clearFrom.value > clearTo.value) { clearLogError.value = 'The "From" date cannot be after the "To" date.'; return; }
+            if (!confirm(`Permanently delete activity-log entries from ${clearFrom.value} to ${clearTo.value}? This cannot be undone.`)) return;
+            clearLogBusy.value = true; clearLogError.value = '';
+            try {
+                const res = await apiFetch('/api/activity-logs/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ from_date: clearFrom.value, to_date: clearTo.value })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) { clearLogError.value = data.message || 'Could not clear logs.'; return; }
+                showClearLogModal.value = false;
+                await fetchData();
+                alert(`Cleared ${data.deleted} log entr${data.deleted === 1 ? 'y' : 'ies'}.`);
+            } catch (e) {
+                console.error('Clear log error', e);
+                clearLogError.value = 'Could not clear logs. Please try again.';
+            } finally {
+                clearLogBusy.value = false;
+            }
+        };
+
         onMounted(async () => {
             const savedPalette = localStorage.getItem('ca_palette');
             if (savedPalette && palettes[savedPalette]) {
@@ -1311,7 +1699,42 @@ createApp({
             showCompletionModal,
             completionTask,
             submitCompletionLog,
-            closeCompletionModal
+            closeCompletionModal,
+            // Exports (Excel / PDF)
+            showExportModal,
+            exportBusy,
+            exportFormat,
+            exportTitle,
+            exportMode,
+            exportColumns,
+            exportFieldSel,
+            exportFilters,
+            exportSheets,
+            openExportModal,
+            closeExportModal,
+            confirmExport,
+            // Bulk import (clients / services / users / tasks)
+            showImportModal,
+            importBusy,
+            importError,
+            importFileName,
+            importResult,
+            importEntity,
+            importConfig,
+            openImportModal,
+            closeImportModal,
+            onImportFileChange,
+            downloadImportTemplate,
+            submitImport,
+            // Clear activity log
+            showClearLogModal,
+            clearLogBusy,
+            clearLogError,
+            clearFrom,
+            clearTo,
+            openClearLogModal,
+            closeClearLogModal,
+            confirmClearLog
         };
     }
 }).mount('#app');

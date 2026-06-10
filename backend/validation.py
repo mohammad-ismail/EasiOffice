@@ -56,8 +56,8 @@ def validate_financial_year(value):
 
 
 def validate_role(value):
-    if value not in ("Admin", "Employee"):
-        raise ValidationError(f"Invalid role '{value}'. Must be 'Admin' or 'Employee'.")
+    if value not in ("Admin", "Partner", "Manager", "Employee"):
+        raise ValidationError(f"Invalid role '{value}'. Must be Admin, Partner, Manager or Employee.")
 
 
 def validate_int_range(value, low, high, name):

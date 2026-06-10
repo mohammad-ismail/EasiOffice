@@ -12,6 +12,7 @@ from . import security
 from . import validation
 from . import exporter
 from . import importer
+from . import permissions
 from .validation import ValidationError
 from .exporter import ExportError
 from .importer import ImportFileError
@@ -70,6 +71,56 @@ def admin_required(f):
 
 def current_username():
     return session.get('username', 'anonymous')
+
+
+def current_role_and_perms():
+    """Load the logged-in user's role + effective capabilities fresh from the DB,
+    so permission changes take effect immediately (not only on next login)."""
+    uid = session.get('user_id')
+    if not uid:
+        return None, {}
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('SELECT role, permissions FROM users WHERE id = ?', (uid,))
+    row = cursor.fetchone()
+    db.close()
+    if not row:
+        return None, {}
+    return row['role'], permissions.effective(row['role'], row['permissions'])
+
+
+def has_perm(cap):
+    _role, perms = current_role_and_perms()
+    return bool(perms.get(cap))
+
+
+def require_perm(*caps):
+    """Allow the request if the user has ANY of the given capabilities."""
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            if not session.get('user_id'):
+                abort(401, description="Authentication required.")
+            _role, perms = current_role_and_perms()
+            if not any(perms.get(c) for c in caps):
+                abort(403, description="You don't have permission to perform this action.")
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def admin_or_partner_required(f):
+    """For high-trust actions reserved to Admin/Partner regardless of toggles
+    (e.g. changing other users' roles/permissions, clearing the audit log)."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get('user_id'):
+            abort(401, description="Authentication required.")
+        role, _perms = current_role_and_perms()
+        if role not in ('Admin', 'Partner'):
+            abort(403, description="Only Admin or Partner can perform this action.")
+        return f(*args, **kwargs)
+    return wrapper
 
 
 def get_body():
@@ -171,7 +222,7 @@ def handle_login():
 
     db = get_db()
     cursor = db.cursor()
-    cursor.execute('SELECT id, username, password, role, full_name FROM users WHERE username = ?', (username,))
+    cursor.execute('SELECT id, username, password, role, full_name, permissions FROM users WHERE username = ?', (username,))
     user = cursor.fetchone()
 
     if user and password is not None:
@@ -199,7 +250,8 @@ def handle_login():
                     "id": user['id'],
                     "username": user['username'],
                     "role": user['role'],
-                    "full_name": user['full_name']
+                    "full_name": user['full_name'],
+                    "permissions": permissions.effective(user['role'], user['permissions'])
                 }
             })
 
@@ -218,11 +270,13 @@ def handle_logout():
 def whoami():
     if not session.get('user_id'):
         abort(401, description="Not authenticated.")
+    role, perms = current_role_and_perms()
     return jsonify({"user": {
         "id": session.get('user_id'),
         "username": session.get('username'),
-        "role": session.get('role'),
+        "role": role or session.get('role'),
         "full_name": session.get('full_name'),
+        "permissions": perms,
     }})
 
 
@@ -233,7 +287,7 @@ def read_activity_logs():
     role = session.get('role')
     username = session.get('username')
     db = get_db()
-    if role == 'Admin':
+    if role in ('Admin', 'Partner'):
         logs = crud.get_activity_logs(db)
     else:
         logs = crud.get_activity_logs(db, username)
@@ -241,7 +295,7 @@ def read_activity_logs():
     return jsonify(logs)
 
 @app.route('/api/activity-logs/clear', methods=['POST'])
-@admin_required
+@admin_or_partner_required
 def clear_activity_logs():
     """Admin-only: permanently delete audit-log entries within a date range
     (inclusive, YYYY-MM-DD). The deletion itself is logged afterwards so there
@@ -271,7 +325,7 @@ def read_tasks():
     return jsonify(tasks)
 
 @app.route('/api/tasks/bulk', methods=['POST'])
-@admin_required
+@require_perm('create_task')
 def bulk_create_tasks():
     data = get_body()
     validation.require(data, 'service_id', 'financial_year', 'period')
@@ -317,10 +371,11 @@ def update_status(task_id):
     return jsonify({"message": "updated"})
 
 @app.route('/api/tasks/<int:task_id>/assign', methods=['PUT'])
-@admin_required
+@require_perm('assign_task')
 def assign_task_to_user(task_id):
     data = get_body()
     user_id = data.get('user_id') or None   # '' / null / 0 -> unassign
+    role, perms = current_role_and_perms()
     db = get_db()
     cursor = db.cursor()
     cursor.execute('''
@@ -336,15 +391,83 @@ def assign_task_to_user(task_id):
         abort(404, description="Task not found")
     assignee = 'Unassigned'
     if user_id is not None:
-        cursor.execute('SELECT full_name FROM users WHERE id = ?', (user_id,))
+        cursor.execute('SELECT full_name, role FROM users WHERE id = ?', (user_id,))
         u = cursor.fetchone()
         if not u:
             db.close()
             abort(400, description="Invalid staff user.")
+        # A Manager may only assign to Employees, and (without assign_self) not to themselves.
+        if not perms.get('assign_self') and user_id == session.get('user_id'):
+            db.close()
+            abort(403, description="You can't assign tasks to yourself.")
+        if role == 'Manager' and u['role'] != 'Employee':
+            db.close()
+            abort(403, description="Managers can only assign tasks to Employees.")
         assignee = u['full_name']
     crud.assign_task(db, task_id, user_id)
     crud.log_user_action(db, current_username(), "Task Assigned",
                          f"Assigned task '{task['client_name']} - {task['service_name']}' ({task['period']}) to {assignee}")
+    db.close()
+    return jsonify({"status": "success"})
+
+
+@app.route('/api/tasks/<int:task_id>/delegate', methods=['PUT'])
+@require_perm('delegate_task')
+def delegate_task_to_user(task_id):
+    """A Manager delegates a task (assigned to them) onward to an Employee. The
+    task still shows the Manager as assignee, plus the delegate."""
+    data = get_body()
+    user_id = data.get('user_id') or None
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT t.assigned_to, c.name as client_name, s.name as service_name, t.period
+        FROM task_board t
+        LEFT JOIN client_master c ON t.client_id = c.id
+        LEFT JOIN service_master s ON t.service_id = s.id
+        WHERE t.id = ?
+    ''', (task_id,))
+    task = cursor.fetchone()
+    if not task:
+        db.close()
+        abort(404, description="Task not found")
+    delegate_name = 'cleared'
+    if user_id is not None:
+        cursor.execute('SELECT full_name, role FROM users WHERE id = ?', (user_id,))
+        u = cursor.fetchone()
+        if not u:
+            db.close()
+            abort(400, description="Invalid staff user.")
+        if u['role'] != 'Employee':
+            db.close()
+            abort(403, description="Tasks can only be delegated to Employees.")
+        delegate_name = u['full_name']
+    crud.delegate_task(db, task_id, user_id)
+    crud.log_user_action(db, current_username(), "Task Delegated",
+                         f"Delegated task '{task['client_name']} - {task['service_name']}' ({task['period']}) to {delegate_name}")
+    db.close()
+    return jsonify({"status": "success"})
+
+
+@app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
+@require_perm('delete_task')
+def delete_single_task(task_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT c.name as client_name, s.name as service_name, t.period
+        FROM task_board t
+        LEFT JOIN client_master c ON t.client_id = c.id
+        LEFT JOIN service_master s ON t.service_id = s.id
+        WHERE t.id = ?
+    ''', (task_id,))
+    task = cursor.fetchone()
+    if not task:
+        db.close()
+        abort(404, description="Task not found")
+    crud.delete_task(db, task_id)
+    crud.log_user_action(db, current_username(), "Task Deleted",
+                         f"Deleted task '{task['client_name']} - {task['service_name']}' ({task['period']})")
     db.close()
     return jsonify({"status": "success"})
 
@@ -516,12 +639,18 @@ _IMPORT_HANDLERS = {
 }
 
 
+_IMPORT_CAP = {'clients': 'manage_clients', 'services': 'manage_services',
+               'users': 'manage_users', 'tasks': 'create_task'}
+
+
 @app.route('/api/import/<entity>/template', methods=['GET'])
-@admin_required
+@login_required
 def import_template(entity):
     """Download a ready-to-fill upload template (CSV or Excel) for an entity."""
     if entity not in importer.ENTITY_CONFIGS:
         abort(404, description="Unknown import type.")
+    if not has_perm(_IMPORT_CAP.get(entity, '')):
+        abort(403, description="You don't have permission to import this data.")
     cfg = importer.ENTITY_CONFIGS[entity]
     cols = cfg['template_columns']
     fmt = (request.args.get('format') or 'csv').lower()
@@ -550,12 +679,14 @@ def import_template(entity):
 
 
 @app.route('/api/import/<entity>', methods=['POST'])
-@admin_required
+@login_required
 def import_entity(entity):
     """Validate and import an uploaded file. Returns a per-row error report.
     Valid rows are imported even if other rows fail."""
     if entity not in _IMPORT_HANDLERS:
         abort(404, description="Unknown import type.")
+    if not has_perm(_IMPORT_CAP.get(entity, '')):
+        abort(403, description="You don't have permission to import this data.")
     if 'file' not in request.files:
         abort(400, description="No file uploaded.")
     upload = request.files['file']
@@ -633,7 +764,7 @@ def decrypt_credential(cred_id):
     return jsonify({"password": pwd})
 
 @app.route('/api/tasks', methods=['POST'])
-@admin_required
+@require_perm('create_task')
 def create_single_task():
     data = get_body()
     # `period` is only user-supplied for one-time tasks. For recurring plans
@@ -670,7 +801,7 @@ def read_client_groups():
     return jsonify(groups)
 
 @app.route('/api/clients', methods=['POST'])
-@admin_required
+@require_perm('manage_clients')
 def create_single_client():
     data = get_body()
     validation.require(data, 'name', 'entity_type', 'pan', 'physical_folder_location')
@@ -685,7 +816,7 @@ def create_single_client():
     return jsonify(result)
 
 @app.route('/api/clients/<int:client_id>/assign', methods=['PUT'])
-@admin_required
+@require_perm('manage_clients')
 def assign_client_to_user(client_id):
     data = get_body()
     user_id = data.get('user_id') or None   # '' / null / 0 -> unassign
@@ -718,40 +849,85 @@ def read_users():
     db.close()
     return jsonify(users)
 
+def _assignable_roles(actor_role):
+    """Which roles a given actor may assign to others. Nobody can create another
+    Admin via the app (the primary admin is seeded), preventing privilege escalation."""
+    if actor_role == 'Admin':
+        return ('Partner', 'Manager', 'Employee')
+    if actor_role == 'Partner':
+        return ('Manager', 'Employee')
+    return ('Employee',)
+
+
 @app.route('/api/users', methods=['POST'])
-@admin_required
+@require_perm('manage_users')
 def create_single_user():
     data = get_body()
     validation.require(data, 'username', 'password', 'full_name')
-    # Staff created here are always Employees. New Admins cannot be created via
-    # this endpoint (server-enforced, so it can't be bypassed from the client).
-    data['role'] = 'Employee'
-    username = current_username()
+    actor_role, _p = current_role_and_perms()
+    allowed = _assignable_roles(actor_role)
+    requested_role = (data.get('role') or 'Employee')
+    if requested_role not in allowed:
+        requested_role = 'Employee' if 'Employee' in allowed else allowed[0]
+    data['role'] = requested_role
+    # Only Admin/Partner may set per-user permission overrides.
+    data['permissions'] = (permissions.sanitize_overrides(data.get('permissions'))
+                           if actor_role in ('Admin', 'Partner') else None)
     db = get_db()
     result = crud.create_user(db, data)
-    details = f"Added staff account: '{data['username']}' (Employee)"
-    crud.log_user_action(db, username, "User Added", details)
+    crud.log_user_action(db, current_username(), "User Added",
+                         f"Added staff account: '{data['username']}' ({requested_role})")
     db.close()
     return jsonify(result)
 
 @app.route('/api/users/<int:user_id>', methods=['DELETE'])
-@admin_required
+@require_perm('delete_user')
 def delete_single_user(user_id):
-    username = current_username()
     db = get_db()
     cursor = db.cursor()
-    cursor.execute('SELECT username, full_name FROM users WHERE id = ?', (user_id,))
+    cursor.execute('SELECT username, full_name, role FROM users WHERE id = ?', (user_id,))
     usr = cursor.fetchone()
-    usr_desc = f"'{usr['username']}' ({usr['full_name']})" if usr else f"ID {user_id}"
+    if not usr:
+        db.close()
+        abort(404, description="User not found")
+    if usr['username'] == 'admin':
+        db.close()
+        abort(403, description="The primary administrator cannot be deleted.")
+    if user_id == session.get('user_id'):
+        db.close()
+        abort(403, description="You cannot delete your own account.")
+
+    body = get_body()
+    reassign_to = body.get('reassign_to') or request.args.get('reassign_to')
+    open_tasks = crud.count_user_tasks(db, user_id)
+    if open_tasks > 0:
+        if not reassign_to:
+            db.close()
+            abort(400, description=f"This staff member still has {open_tasks} task(s) assigned. "
+                                   "Pick someone to reassign them to before deleting.")
+        try:
+            reassign_to = int(reassign_to)
+        except (TypeError, ValueError):
+            db.close()
+            abort(400, description="Invalid reassignment target.")
+        if reassign_to == user_id:
+            db.close()
+            abort(400, description="Cannot reassign tasks to the person being deleted.")
+        cursor.execute('SELECT id FROM users WHERE id = ?', (reassign_to,))
+        if not cursor.fetchone():
+            db.close()
+            abort(400, description="Reassignment target not found.")
+        crud.reassign_user_tasks(db, user_id, reassign_to)
 
     deleted = crud.delete_user(db, user_id)
     if deleted:
-        details = f"Deleted staff account {usr_desc}"
-        crud.log_user_action(db, username, "User Deleted", details)
+        suffix = f"; reassigned {open_tasks} task(s)" if open_tasks else ""
+        crud.log_user_action(db, current_username(), "User Deleted",
+                             f"Deleted staff account '{usr['username']}' ({usr['full_name']}){suffix}")
     db.close()
     if not deleted:
         abort(404, description="User not found")
-    return jsonify({"message": "deleted"})
+    return jsonify({"status": "success", "reassigned": open_tasks})
 
 @app.route('/api/timesheets', methods=['GET'])
 @login_required
@@ -816,7 +992,7 @@ def update_portal_credential(cred_id):
     return jsonify({"status": "success"})
 
 @app.route('/api/credentials/<int:cred_id>', methods=['DELETE'])
-@admin_required
+@admin_or_partner_required
 def delete_portal_credential(cred_id):
     username = current_username()
     db = get_db()
@@ -870,7 +1046,7 @@ def create_portal_contact():
     return jsonify(result)
 
 @app.route('/api/services', methods=['POST'])
-@admin_required
+@require_perm('manage_services')
 def create_firm_service():
     data = get_body()
     validation.require(data, 'name', 'description')
@@ -883,7 +1059,7 @@ def create_firm_service():
     return jsonify(result)
 
 @app.route('/api/tasks/<int:task_id>', methods=['PUT'])
-@admin_required
+@require_perm('create_task')
 def update_task_details(task_id):
     data = get_body()
     validation.require(data, 'client_id', 'service_id', 'financial_year', 'period')
@@ -908,7 +1084,7 @@ def update_task_details(task_id):
     return jsonify({"status": "success"})
 
 @app.route('/api/clients/<int:client_id>', methods=['PUT'])
-@admin_required
+@require_perm('manage_clients')
 def update_client_details(client_id):
     data = get_body()
     validation.require(data, 'name', 'pan', 'physical_folder_location')
@@ -925,8 +1101,32 @@ def update_client_details(client_id):
         abort(404, description="Client not found")
     return jsonify({"status": "success"})
 
+@app.route('/api/clients/<int:client_id>', methods=['DELETE'])
+@require_perm('delete_client')
+def delete_single_client(client_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('SELECT name FROM client_master WHERE id = ?', (client_id,))
+    cl = cursor.fetchone()
+    if not cl:
+        db.close()
+        abort(404, description="Client not found")
+    # Phase A rule: a client can be deleted only when it has no tasks. (Phase B will
+    # extend this to also allow deletion when every task is in Received Fees.)
+    n_tasks = crud.count_client_tasks(db, client_id)
+    if n_tasks > 0:
+        db.close()
+        abort(400, description=f"This client has {n_tasks} task(s) and can't be deleted yet. "
+                               "A client can only be deleted when it has no tasks "
+                               "(or, once billing is enabled, when all its tasks are in Received Fees).")
+    crud.delete_client(db, client_id)
+    crud.log_user_action(db, current_username(), "Client Deleted",
+                         f"Deleted client '{cl['name']}' (with its contacts and stored credentials)")
+    db.close()
+    return jsonify({"status": "success"})
+
 @app.route('/api/services/<int:service_id>', methods=['PUT'])
-@admin_required
+@require_perm('manage_services')
 def update_service_details(service_id):
     data = get_body()
     validation.require(data, 'name', 'description')
@@ -942,26 +1142,39 @@ def update_service_details(service_id):
     return jsonify({"status": "success"})
 
 @app.route('/api/users/<int:user_id>', methods=['PUT'])
-@admin_required
+@require_perm('manage_users')
 def update_user_details(user_id):
     data = get_body()
     validation.require(data, 'username', 'full_name')
-    username = current_username()
+    actor_role, _p = current_role_and_perms()
     db = get_db()
-    # Role is immutable through this endpoint: keep whatever the user already has.
-    # This prevents promoting an Employee to Admin (and accidentally demoting the
-    # primary admin) regardless of what the client sends.
     cursor = db.cursor()
-    cursor.execute('SELECT role FROM users WHERE id = ?', (user_id,))
+    cursor.execute('SELECT role, permissions, username FROM users WHERE id = ?', (user_id,))
     existing = cursor.fetchone()
     if not existing:
         db.close()
         abort(404, description="User not found")
-    data['role'] = existing['role']
+
+    # Role + permission changes are reserved to Admin/Partner. Anyone else with
+    # manage_users (e.g. a Manager) may edit basic details only — role/perms are
+    # preserved exactly as they were, preventing privilege escalation.
+    if actor_role in ('Admin', 'Partner') and existing['username'] != 'admin':
+        requested_role = data.get('role') or existing['role']
+        allowed = _assignable_roles(actor_role)
+        # Keep the current role if it isn't one this actor is allowed to set
+        data['role'] = requested_role if requested_role in allowed else existing['role']
+        if 'permissions' in data:
+            data['permissions'] = permissions.sanitize_overrides(data.get('permissions'))
+        else:
+            data['permissions'] = existing['permissions']
+    else:
+        data['role'] = existing['role']
+        data['permissions'] = existing['permissions']
+
     updated = crud.update_user(db, user_id, data)
     if updated:
-        details = f"Updated staff account (ID: {user_id}): '{data['username']}'"
-        crud.log_user_action(db, username, "User Details Updated", details)
+        crud.log_user_action(db, current_username(), "User Details Updated",
+                             f"Updated staff account (ID: {user_id}): '{data['username']}' ({data['role']})")
     db.close()
     if not updated:
         abort(404, description="User not found")

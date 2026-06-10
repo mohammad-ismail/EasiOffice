@@ -164,7 +164,19 @@ def init_db():
         timestamp TEXT
     )
     ''')
-        
+
+    # Auto-migration: per-user permission overrides (JSON) on top of role defaults
+    cursor.execute("PRAGMA table_info(users)")
+    user_cols = [row[1] for row in cursor.fetchall()]
+    if 'permissions' not in user_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN permissions TEXT")
+
+    # Auto-migration: delegation target on tasks (Manager delegates to an Employee)
+    cursor.execute("PRAGMA table_info(task_board)")
+    tb_cols3 = [row[1] for row in cursor.fetchall()]
+    if 'delegated_to' not in tb_cols3:
+        cursor.execute("ALTER TABLE task_board ADD COLUMN delegated_to INTEGER")
+
     conn.commit()
     conn.close()
 

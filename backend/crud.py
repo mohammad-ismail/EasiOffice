@@ -25,11 +25,14 @@ def get_activity_logs(db, username: str = None):
 def get_tasks_with_details(db):
     cursor = db.cursor()
     cursor.execute('''
-        SELECT t.id, c.name as client_name, s.name as service_name, t.financial_year, t.period, t.status, t.assigned_to, u.full_name as assigned_to_name, t.client_id, t.due_date
+        SELECT t.id, c.name as client_name, s.name as service_name, t.financial_year, t.period,
+               t.status, t.assigned_to, u.full_name as assigned_to_name, t.client_id, t.due_date,
+               t.delegated_to, d.full_name as delegated_to_name
         FROM task_board t
         LEFT JOIN client_master c ON t.client_id = c.id
         LEFT JOIN service_master s ON t.service_id = s.id
         LEFT JOIN users u ON t.assigned_to = u.id
+        LEFT JOIN users d ON t.delegated_to = d.id
     ''')
     return [dict(row) for row in cursor.fetchall()]
 
@@ -327,16 +330,17 @@ def get_client_credentials(db, client_id: int):
 
 def get_users(db):
     cursor = db.cursor()
-    cursor.execute('SELECT id, username, role, full_name FROM users')
+    cursor.execute('SELECT id, username, role, full_name, permissions FROM users')
     return [dict(row) for row in cursor.fetchall()]
 
 def create_user(db, user_data: dict):
     hashed_pw = security.hash_password(user_data['password'])
     cursor = db.cursor()
     cursor.execute('''
-        INSERT INTO users (username, password, role, full_name)
-        VALUES (?, ?, ?, ?)
-    ''', (user_data['username'], hashed_pw, user_data['role'], user_data['full_name']))
+        INSERT INTO users (username, password, role, full_name, permissions)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (user_data['username'], hashed_pw, user_data.get('role', 'Employee'),
+          user_data['full_name'], user_data.get('permissions')))
     db.commit()
     return {"id": cursor.lastrowid, "username": user_data['username']}
 
@@ -461,16 +465,63 @@ def update_user(db, user_id: int, user_data: dict):
         hashed_pw = security.hash_password(password)
         cursor.execute('''
             UPDATE users
-            SET username = ?, password = ?, role = ?, full_name = ?
+            SET username = ?, password = ?, role = ?, full_name = ?, permissions = ?
             WHERE id = ?
-        ''', (user_data['username'], hashed_pw, user_data['role'], user_data['full_name'], user_id))
+        ''', (user_data['username'], hashed_pw, user_data['role'], user_data['full_name'],
+              user_data.get('permissions'), user_id))
     else:
         cursor.execute('''
-            UPDATE users 
-            SET username = ?, role = ?, full_name = ?
+            UPDATE users
+            SET username = ?, role = ?, full_name = ?, permissions = ?
             WHERE id = ?
-        ''', (user_data['username'], user_data['role'], user_data['full_name'], user_id))
-        
+        ''', (user_data['username'], user_data['role'], user_data['full_name'],
+              user_data.get('permissions'), user_id))
+
+    db.commit()
+    return cursor.rowcount > 0
+
+# --- Delete / reassignment helpers (Phase A) ---------------------------------
+def count_user_tasks(db, user_id: int):
+    """How many tasks reference this user as assignee or delegate."""
+    cursor = db.cursor()
+    cursor.execute('SELECT COUNT(*) AS n FROM task_board WHERE assigned_to = ? OR delegated_to = ?',
+                   (user_id, user_id))
+    return cursor.fetchone()['n']
+
+def reassign_user_tasks(db, from_user_id: int, to_user_id):
+    """Move every task assigned/delegated to from_user_id over to to_user_id."""
+    cursor = db.cursor()
+    cursor.execute('UPDATE task_board SET assigned_to = ? WHERE assigned_to = ?', (to_user_id, from_user_id))
+    cursor.execute('UPDATE task_board SET delegated_to = ? WHERE delegated_to = ?', (to_user_id, from_user_id))
+    db.commit()
+
+def delegate_task(db, task_id: int, user_id):
+    """Set (or clear, with user_id=None) the delegate on a task."""
+    cursor = db.cursor()
+    cursor.execute('UPDATE task_board SET delegated_to = ? WHERE id = ?', (user_id, task_id))
+    db.commit()
+    return cursor.rowcount > 0
+
+def delete_task(db, task_id: int):
+    """Delete a task and any timesheets logged against it."""
+    cursor = db.cursor()
+    cursor.execute('DELETE FROM timesheets WHERE task_id = ?', (task_id,))
+    cursor.execute('DELETE FROM task_board WHERE id = ?', (task_id,))
+    db.commit()
+    return cursor.rowcount > 0
+
+def count_client_tasks(db, client_id: int):
+    cursor = db.cursor()
+    cursor.execute('SELECT COUNT(*) AS n FROM task_board WHERE client_id = ?', (client_id,))
+    return cursor.fetchone()['n']
+
+def delete_client(db, client_id: int):
+    """Delete a client and its contacts + stored credentials. Caller must ensure
+    the deletion is allowed (e.g. no open tasks)."""
+    cursor = db.cursor()
+    cursor.execute('DELETE FROM client_contacts WHERE client_id = ?', (client_id,))
+    cursor.execute('DELETE FROM credential_box WHERE client_id = ?', (client_id,))
+    cursor.execute('DELETE FROM client_master WHERE id = ?', (client_id,))
     db.commit()
     return cursor.rowcount > 0
 

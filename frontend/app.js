@@ -94,9 +94,61 @@ createApp({
 
         // Dynamic Access Control State
         const isLoggedIn = ref(false);
-        const currentUser = ref({ id: 0, username: '', role: 'Employee', full_name: '' });
+        const currentUser = ref({ id: 0, username: '', role: 'Employee', full_name: '', permissions: {} });
         const loginForm = ref({ username: '', password: '' });
         const loginError = ref('');
+
+        // ===================== Roles & permissions (Phase A) =====================
+        // Default capabilities per role — mirrors backend/permissions.py so the
+        // permission-toggle UI can show effective values. The server is always the
+        // source of truth and re-checks every action.
+        const CAPABILITIES = [
+            'create_task', 'assign_task', 'assign_self', 'delegate_task',
+            'delete_task', 'delete_client', 'delete_user', 'manage_users',
+            'manage_clients', 'manage_services', 'manage_billing', 'reset_timer'
+        ];
+        const CAPABILITY_LABELS = {
+            create_task: 'Create tasks', assign_task: 'Assign tasks to others',
+            assign_self: 'Assign tasks to themselves', delegate_task: 'Delegate tasks to others',
+            delete_task: 'Delete tasks', delete_client: 'Delete clients',
+            delete_user: 'Delete staff accounts', manage_users: 'Add / edit staff accounts',
+            manage_clients: 'Create / edit clients', manage_services: 'Create / edit services',
+            manage_billing: 'Manage billing (Billed / Received)', reset_timer: 'Reset task timers'
+        };
+        const allCaps = (v) => Object.fromEntries(CAPABILITIES.map(c => [c, v]));
+        const ROLE_DEFAULTS = {
+            Admin: allCaps(true),
+            Partner: allCaps(true),
+            Manager: { ...allCaps(false), create_task: true, assign_task: true, delegate_task: true },
+            Employee: allCaps(false)
+        };
+        const effectivePermsFor = (role, overrides) => {
+            if (role === 'Admin') return allCaps(true);
+            const base = { ...(ROLE_DEFAULTS[role] || ROLE_DEFAULTS.Employee) };
+            if (overrides && typeof overrides === 'object') {
+                for (const k of CAPABILITIES) if (k in overrides) base[k] = !!overrides[k];
+            }
+            return base;
+        };
+
+        // What the logged-in user can DO
+        const can = (cap) => !!(currentUser.value.permissions && currentUser.value.permissions[cap]);
+        const isAdminOrPartner = computed(() => ['Admin', 'Partner'].includes(currentUser.value.role));
+        const canSeeAll = computed(() => isAdminOrPartner.value);
+
+        // What the logged-in user can SEE (scoped by role)
+        const taskVisible = (t) => {
+            if (canSeeAll.value) return true;
+            const me = currentUser.value.id;
+            if (currentUser.value.role === 'Manager') {
+                if (t.assigned_to === me || t.delegated_to === me) return true;
+                if (!t.assigned_to) return true; // unassigned: managers can pick up / assign
+                const assignee = usersList.value.find(u => u.id === t.assigned_to);
+                return assignee && assignee.role === 'Employee';
+            }
+            return t.assigned_to === me || t.delegated_to === me; // Employee
+        };
+        const visibleTasks = computed(() => tasks.value.filter(taskVisible));
 
         // Reactive Data Store
         const tasks = ref([]);
@@ -182,8 +234,20 @@ createApp({
             username: '',
             password: '',
             role: 'Employee',
-            full_name: ''
+            full_name: '',
+            permissions: { ...ROLE_DEFAULTS.Employee }
         });
+
+        // Roles the current user is allowed to assign to others (no new Admins).
+        const assignableRoles = computed(() => {
+            if (currentUser.value.role === 'Admin') return ['Partner', 'Manager', 'Employee'];
+            if (currentUser.value.role === 'Partner') return ['Manager', 'Employee'];
+            return ['Employee'];
+        });
+        // When the role changes in the form, reset toggles to that role's defaults.
+        const onUserRoleChange = () => {
+            userForm.value.permissions = { ...(ROLE_DEFAULTS[userForm.value.role] || ROLE_DEFAULTS.Employee) };
+        };
 
         const serviceForm = ref({
             name: '',
@@ -251,7 +315,7 @@ createApp({
         // Dashboard Stat Summary: dynamically calculates counts strictly for the logged-in staff's tasks (or all for Admin)
         const counts = computed(() => {
             let goingOn = 0, stuck = 0, completed = 0, unassigned = 0;
-            const relevantTasks = tasks.value.filter(t => currentUser.value.role === 'Admin' || t.assigned_to === currentUser.value.id);
+            const relevantTasks = visibleTasks.value;
             relevantTasks.forEach(t => {
                 if (!t.assigned_to || String(t.assigned_to).trim() === "") {
                     unassigned++;
@@ -266,10 +330,7 @@ createApp({
 
         // Computed Filters for Dashboard strictly reflecting active card selection
         const filteredDashboardTasks = computed(() => {
-            let list = tasks.value;
-            if (currentUser.value.role !== 'Admin') {
-                list = tasks.value.filter(t => t.assigned_to === currentUser.value.id);
-            }
+            let list = visibleTasks.value;
             if (activeDashboardFilter.value === 'Unassigned') {
                 list = list.filter(t => !t.assigned_to || String(t.assigned_to).trim() === "");
             } else if (activeDashboardFilter.value === 'Working') {
@@ -290,12 +351,11 @@ createApp({
         };
 
         const boardColumns = computed(() => {
-            const isAdmin = currentUser.value.role === 'Admin';
-            let list = tasks.value;
-            if (!isAdmin) list = tasks.value.filter(t => t.assigned_to === currentUser.value.id);
+            const showUnassigned = canSeeAll.value || can('assign_task');
+            let list = visibleTasks.value;
 
             const cols = [];
-            if (isAdmin) cols.push({ key: 'Unassigned', label: 'Unassigned', icon: 'fa-user-slash', accent: '#8E8E93' });
+            if (showUnassigned) cols.push({ key: 'Unassigned', label: 'Unassigned', icon: 'fa-user-slash', accent: '#8E8E93' });
             cols.push({ key: 'Working', label: 'Working', icon: 'fa-bolt', accent: 'var(--color-goingon)' });
             cols.push({ key: 'Pending', label: 'Pending', icon: 'fa-clock', accent: 'var(--color-stuck)' });
             cols.push({ key: 'Completed', label: 'Completed', icon: 'fa-circle-check', accent: 'var(--color-completed)' });
@@ -393,10 +453,7 @@ createApp({
 
         // Computed Filters for Lists: enforces access control visibility rules
         const filteredTasks = computed(() => {
-            let list = tasks.value;
-            if (currentUser.value.role !== 'Admin') {
-                list = tasks.value.filter(t => t.assigned_to === currentUser.value.id);
-            }
+            let list = visibleTasks.value;
             return list.filter(t => {
                 const search = taskSearch.value.toLowerCase();
                 const matchSearch = !taskSearch.value || 
@@ -409,10 +466,10 @@ createApp({
 
         const filteredClients = computed(() => {
             let list = clients.value;
-            if (currentUser.value.role !== 'Admin') {
-                const assignedClientIds = new Set(tasks.value.filter(t => t.assigned_to === currentUser.value.id).map(t => t.client_id));
-                // Visible if the employee has a task for the client OR the client is directly assigned to them
-                list = clients.value.filter(c => assignedClientIds.has(c.id) || c.assigned_to === currentUser.value.id);
+            if (!canSeeAll.value) {
+                // Visible if the user can see a task for the client, or the client is assigned to them
+                const visibleClientIds = new Set(visibleTasks.value.map(t => t.client_id));
+                list = clients.value.filter(c => visibleClientIds.has(c.id) || c.assigned_to === currentUser.value.id);
             }
             if (!clientSearch.value) return list;
             const search = clientSearch.value.toLowerCase();
@@ -437,7 +494,7 @@ createApp({
 
         // Contact Directory Filters: Accountant-Only visibility filters for Employees
         const filteredContactsList = computed(() => {
-            if (currentUser.value.role === 'Admin') {
+            if (canSeeAll.value) {
                 return contactsList.value;
             } else {
                 return contactsList.value.filter(c => c.designation.toLowerCase() === 'accountant');
@@ -445,7 +502,7 @@ createApp({
         });
 
         const filteredTimesheets = computed(() => {
-            if (currentUser.value.role === 'Admin') {
+            if (canSeeAll.value) {
                 return timesheets.value;
             } else {
                 return timesheets.value.filter(ts => ts.employee_name === currentUser.value.full_name);
@@ -640,6 +697,52 @@ createApp({
             }
         };
 
+        // Delegate a task (Manager -> Employee). assigned_to stays the Manager.
+        const delegateTask = async (task, userId) => {
+            try {
+                const res = await apiFetch(`/api/tasks/${task.id}/delegate`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId || null })
+                });
+                if (res.ok) {
+                    await fetchData();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.message || 'Could not delegate task.');
+                }
+            } catch (e) { console.error('Delegate error', e); }
+        };
+
+        // Delete a task (admin/partner / delete_task permission).
+        const deleteTask = async (task) => {
+            if (!confirm(`Delete the task "${task.client_name} · ${task.service_name}" (${task.period})? This cannot be undone.`)) return;
+            try {
+                const res = await apiFetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    await fetchData();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.message || 'Could not delete task.');
+                }
+            } catch (e) { console.error('Delete task error', e); }
+        };
+
+        // Delete a client (admin/partner / delete_client permission). Backend enforces
+        // the "no open tasks" rule and returns a clear message if not allowed.
+        const deleteClient = async (client) => {
+            if (!confirm(`Delete client "${client.name}"? This also removes its contacts and stored credentials. This cannot be undone.`)) return;
+            try {
+                const res = await apiFetch(`/api/clients/${client.id}`, { method: 'DELETE' });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    await fetchData();
+                } else {
+                    alert(data.message || 'Could not delete client.');
+                }
+            } catch (e) { console.error('Delete client error', e); }
+        };
+
         // Clients API Actions (with edits support)
         const startEditClient = (clientObj) => {
             editingClientId.value = clientObj.id;
@@ -699,22 +802,39 @@ createApp({
         };
 
         // Users API Actions (with edits support)
+        const openUserModal = () => {
+            editingUserId.value = null;
+            const defaultRole = assignableRoles.value.includes('Employee') ? 'Employee' : assignableRoles.value[0];
+            userForm.value = { username: '', password: '', role: defaultRole, full_name: '',
+                               permissions: { ...(ROLE_DEFAULTS[defaultRole] || ROLE_DEFAULTS.Employee) } };
+            showUserModal.value = true;
+        };
+
         const startEditUser = (userObj) => {
             editingUserId.value = userObj.id;
+            let overrides = {};
+            try { overrides = userObj.permissions ? JSON.parse(userObj.permissions) : {}; } catch (e) { overrides = {}; }
             userForm.value = {
                 username: userObj.username,
                 password: '', // leave empty to not change password
                 role: userObj.role,
-                full_name: userObj.full_name
+                full_name: userObj.full_name,
+                permissions: effectivePermsFor(userObj.role, overrides)
             };
             showUserModal.value = true;
         };
 
         const closeUserModal = () => {
             editingUserId.value = null;
-            userForm.value = { username: '', password: '', role: 'Employee', full_name: '' };
+            userForm.value = { username: '', password: '', role: 'Employee', full_name: '', permissions: { ...ROLE_DEFAULTS.Employee } };
             showUserModal.value = false;
         };
+
+        // Whether the editing form may change role/permissions (Admin/Partner only,
+        // and never for the seeded primary admin account).
+        const editingPrimaryAdmin = computed(() =>
+            editingUserId.value && (usersList.value.find(u => u.id === editingUserId.value) || {}).username === 'admin');
+        const canEditRolePerms = computed(() => isAdminOrPartner.value && !editingPrimaryAdmin.value);
 
         const submitUserForm = async () => {
             try {
@@ -734,21 +854,57 @@ createApp({
             }
         };
 
-        const deleteUser = async (userObj) => {
-            if (userObj.username === 'admin') {
-                alert("Primary system administrator cannot be removed.");
+        // Delete a user — but first require every task assigned/delegated to them
+        // to be reassigned to someone else.
+        const showDeleteUserModal = ref(false);
+        const deleteUserTarget = ref(null);
+        const deleteReassignTo = ref('');
+        const deleteUserBusy = ref(false);
+        const deleteUserError = ref('');
+
+        const deleteUserTaskCount = computed(() => {
+            if (!deleteUserTarget.value) return 0;
+            const id = deleteUserTarget.value.id;
+            return tasks.value.filter(t => t.assigned_to === id || t.delegated_to === id).length;
+        });
+        const reassignCandidates = computed(() => {
+            const id = deleteUserTarget.value ? deleteUserTarget.value.id : null;
+            return usersList.value.filter(u => u.id !== id);
+        });
+
+        const openDeleteUser = (userObj) => {
+            if (userObj.username === 'admin') { alert('The primary administrator cannot be deleted.'); return; }
+            if (userObj.id === currentUser.value.id) { alert('You cannot delete your own account.'); return; }
+            deleteUserTarget.value = userObj;
+            deleteReassignTo.value = '';
+            deleteUserError.value = '';
+            showDeleteUserModal.value = true;
+        };
+        const closeDeleteUser = () => { showDeleteUserModal.value = false; deleteUserTarget.value = null; };
+
+        const confirmDeleteUser = async () => {
+            if (deleteUserTaskCount.value > 0 && !deleteReassignTo.value) {
+                deleteUserError.value = 'Pick someone to reassign this person’s tasks to first.';
                 return;
             }
-            if (!confirm(`Are you sure you want to delete staff account: "${userObj.full_name}"?`)) {
-                return;
-            }
+            deleteUserBusy.value = true; deleteUserError.value = '';
             try {
-                const res = await apiFetch(`/api/users/${userObj.id}`, { method: 'DELETE' });
-                if (res.ok) {
-                    await fetchData();
-                }
+                const body = deleteReassignTo.value ? { reassign_to: Number(deleteReassignTo.value) } : {};
+                const res = await apiFetch(`/api/users/${deleteUserTarget.value.id}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) { deleteUserError.value = data.message || 'Could not delete user.'; return; }
+                showDeleteUserModal.value = false;
+                deleteUserTarget.value = null;
+                await fetchData();
             } catch (error) {
-                console.error("Error deleting user:", error);
+                console.error('Error deleting user:', error);
+                deleteUserError.value = 'Could not delete user. Please try again.';
+            } finally {
+                deleteUserBusy.value = false;
             }
         };
 
@@ -1052,7 +1208,7 @@ createApp({
         const selectedReportUser = ref('');
         const userStats = computed(() => {
             let uid = selectedReportUser.value;
-            if (currentUser.value.role !== 'Admin') uid = currentUser.value.id;
+            if (!isAdminOrPartner.value) uid = currentUser.value.id;
             uid = uid === '' ? '' : Number(uid);
             if (!uid) return null;
             const u = usersList.value.find(x => x.id === uid);
@@ -1646,10 +1802,34 @@ createApp({
             closeClientModal,
             submitClientForm,
             assignClient,
+            openUserModal,
             startEditUser,
             closeUserModal,
             submitUserForm,
-            deleteUser,
+            // Roles & permissions
+            can,
+            isAdminOrPartner,
+            canSeeAll,
+            CAPABILITIES,
+            CAPABILITY_LABELS,
+            assignableRoles,
+            onUserRoleChange,
+            canEditRolePerms,
+            // Delegation + deletes
+            delegateTask,
+            deleteTask,
+            deleteClient,
+            // Delete-user-with-reassignment
+            showDeleteUserModal,
+            deleteUserTarget,
+            deleteReassignTo,
+            deleteUserBusy,
+            deleteUserError,
+            deleteUserTaskCount,
+            reassignCandidates,
+            openDeleteUser,
+            closeDeleteUser,
+            confirmDeleteUser,
             startEditService,
             closeServiceModal,
             submitServiceForm,

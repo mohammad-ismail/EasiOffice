@@ -102,7 +102,7 @@
                         <i class="fa-solid fa-layer-group"></i>
                         <span v-show="!isSidebarCollapsed">Services</span>
                     </a>
-                    <a href="#" v-if="currentUser.role === 'Admin'" @click="currentTab = 'users'" class="nav-link" :class="{ active: currentTab === 'users' }" :title="isSidebarCollapsed ? 'Users' : ''">
+                    <a href="#" v-if="can('manage_users')" @click="currentTab = 'users'" class="nav-link" :class="{ active: currentTab === 'users' }" :title="isSidebarCollapsed ? 'Users' : ''">
                         <i class="fa-solid fa-user-shield"></i>
                         <span v-show="!isSidebarCollapsed">Users</span>
                     </a>
@@ -193,10 +193,10 @@
                         <!-- Board intro + active timer -->
                         <div class="flex items-center justify-between mb-5 shrink-0 gap-3">
                             <p class="text-[15px] text-gray-500">
-                                {{ currentUser.role === 'Admin' ? 'Drag cards across columns to assign or update status.' : 'Drag your tasks across columns to update their status.' }}
+                                {{ can('assign_task') ? 'Drag cards across columns to assign or update status.' : 'Drag your tasks across columns to update their status.' }}
                             </p>
                             <div class="flex items-center gap-3">
-                            <button v-if="currentUser.role === 'Admin'" @click="openExportModal('dashboard')" class="px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                            <button v-if="isAdminOrPartner" @click="openExportModal('dashboard')" class="px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
                                 <i class="fa-solid fa-file-export"></i> Export Full Report
                             </button>
                             <div v-if="activeTimer" class="flex items-center gap-3 bg-white app-card px-4 py-2">
@@ -236,9 +236,14 @@
                                          @dragend="onTaskDragEnd">
                                         <div class="flex items-start justify-between gap-2">
                                             <div class="font-semibold text-[15px] text-gray-800 leading-snug">{{ task.client_name }}</div>
-                                            <button v-if="currentUser.role === 'Admin'" @click="startEditTask(task)" class="text-gray-400 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg transition shrink-0" title="Edit task">
-                                                <i class="fa-solid fa-pen text-[12px]"></i>
-                                            </button>
+                                            <div class="flex items-center gap-1 shrink-0">
+                                                <button v-if="can('create_task')" @click="startEditTask(task)" class="text-gray-400 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg transition" title="Edit task">
+                                                    <i class="fa-solid fa-pen text-[12px]"></i>
+                                                </button>
+                                                <button v-if="can('delete_task')" @click="deleteTask(task)" class="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete task">
+                                                    <i class="fa-solid fa-trash-can text-[12px]"></i>
+                                                </button>
+                                            </div>
                                         </div>
                                         <div class="mt-1.5 inline-flex items-center bg-gray-100 text-gray-600 px-2.5 py-1 rounded-md text-[12.5px] font-medium">
                                             {{ task.service_name }}
@@ -249,7 +254,7 @@
                                         </div>
                                         <div class="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
                                             <span class="text-[12.5px] text-gray-500 inline-flex items-center gap-1.5 truncate">
-                                                <i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}
+                                                <i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}<template v-if="task.delegated_to_name"> <i class="fa-solid fa-arrow-right-long text-gray-300 mx-0.5"></i> {{ task.delegated_to_name }}</template>
                                             </span>
                                             <button v-if="!activeTimer || activeTimer.taskId !== task.id" @click="startTimer(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-gray-600 hover:text-white hover:bg-accent transition inline-flex items-center gap-1.5 border border-gray-200 shrink-0">
                                                 <i class="fa-solid fa-play text-[10px]"></i> Start
@@ -291,20 +296,20 @@
                                 <button @click="openExportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
                                     <i class="fa-solid fa-file-export"></i> Export
                                 </button>
-                                <button v-if="currentUser.role === 'Admin'" @click="openImportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                <button v-if="can('create_task')" @click="openImportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl transition flex items-center gap-1.5 shadow-sm">
                                     <i class="fa-solid fa-file-import"></i> Bulk Upload
                                 </button>
-                                <button v-if="currentUser.role === 'Admin'" @click="showBulkEngine = !showBulkEngine" class="px-4 py-2 text-sm font-semibold border border-primary text-primary hover:bg-blue-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                <button v-if="can('create_task')" @click="showBulkEngine = !showBulkEngine" class="px-4 py-2 text-sm font-semibold border border-primary text-primary hover:bg-blue-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
                                     <i class="fa-solid fa-bolt"></i> Bulk Engine
                                 </button>
-                                <button v-if="currentUser.role === 'Admin'" @click="showTaskModal = true" class="px-4 py-2 text-sm font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                <button v-if="can('create_task')" @click="showTaskModal = true" class="px-4 py-2 text-sm font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center gap-1.5 shadow-sm">
                                     <i class="fa-solid fa-plus"></i> Create Task
                                 </button>
                             </div>
                         </div>
 
                         <!-- Collapsible Bulk Engine Panel -->
-                        <div v-if="showBulkEngine && currentUser.role === 'Admin'" class="bg-gray-900 text-white rounded-2xl shadow-lg p-6 border border-gray-800 relative overflow-hidden transition-all duration-300">
+                        <div v-if="showBulkEngine && can('create_task')" class="bg-gray-900 text-white rounded-2xl shadow-lg p-6 border border-gray-800 relative overflow-hidden transition-all duration-300">
                             <div class="relative z-10 max-w-2xl">
                                 <h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-bolt text-white"></i> Generate Bulk Tasks</h3>
                                 <p class="text-gray-300 text-sm mt-1 mb-5">Instantly auto-generate a compliance task for all registered clients using a service template.</p>
@@ -359,8 +364,8 @@
 
                                 <div class="pt-3 border-t border-gray-100 space-y-2.5">
                                     <span class="text-[12px] font-semibold text-gray-400 uppercase tracking-wide block">Assigned Staff</span>
-                                    <!-- Admin: assign + status -->
-                                    <div v-if="currentUser.role === 'Admin'" class="flex items-center gap-2">
+                                    <!-- Can assign: assign + status + edit/delete -->
+                                    <div v-if="can('assign_task')" class="flex items-center gap-2">
                                         <select v-model="task.assigned_to" @change="assignTask(task, task.assigned_to)" title="Assign this task to a staff member" class="flex-1 min-w-0 rounded-lg border border-gray-200 px-2.5 py-2 text-[14px] bg-white focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer">
                                             <option :value="null">— Unassigned —</option>
                                             <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.full_name }}</option>
@@ -370,9 +375,10 @@
                                             <option value="Pending">Pending</option>
                                             <option value="Completed">Completed</option>
                                         </select>
-                                        <button @click="startEditTask(task)" class="p-2 rounded-lg text-gray-400 hover:text-accent hover:bg-accent-light transition shrink-0" title="Edit task"><i class="fa-solid fa-pen text-[13px]"></i></button>
+                                        <button v-if="can('create_task')" @click="startEditTask(task)" class="p-2 rounded-lg text-gray-400 hover:text-accent hover:bg-accent-light transition shrink-0" title="Edit task"><i class="fa-solid fa-pen text-[13px]"></i></button>
+                                        <button v-if="can('delete_task')" @click="deleteTask(task)" class="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition shrink-0" title="Delete task"><i class="fa-solid fa-trash-can text-[13px]"></i></button>
                                     </div>
-                                    <!-- Employee: status only -->
+                                    <!-- Otherwise: assignee text + own status -->
                                     <div v-else class="flex items-center justify-between gap-2">
                                         <span class="text-[14px] text-gray-600 inline-flex items-center gap-1.5 truncate"><i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}</span>
                                         <select v-model="task.status" @change="updateTaskStatus(task.id, task.status)" class="rounded-lg border border-gray-200 px-2.5 py-2 text-[14px] bg-white focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer shrink-0">
@@ -380,6 +386,18 @@
                                             <option value="Pending">Pending</option>
                                             <option value="Completed">Completed</option>
                                         </select>
+                                    </div>
+                                    <!-- Delegation: a Manager passing a task assigned to them down to an Employee -->
+                                    <div v-if="can('delegate_task') && task.assigned_to === currentUser.id" class="flex items-center gap-2">
+                                        <span class="text-[12px] text-gray-400 shrink-0">Delegate to</span>
+                                        <select v-model="task.delegated_to" @change="delegateTask(task, task.delegated_to)" class="flex-1 min-w-0 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13.5px] bg-white cursor-pointer">
+                                            <option :value="null">— None —</option>
+                                            <option v-for="u in usersList.filter(x => x.role === 'Employee')" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+                                        </select>
+                                    </div>
+                                    <!-- Delegated indicator (shown to everyone who can see the card) -->
+                                    <div v-if="task.delegated_to_name" class="text-[12.5px] text-gray-500">
+                                        <i class="fa-solid fa-arrow-right-long text-gray-300 mr-1"></i>Delegated to <span class="font-semibold text-gray-700">{{ task.delegated_to_name }}</span>
                                     </div>
                                 </div>
                             </div>
@@ -399,10 +417,10 @@
                                 <button @click="openExportModal('clients')" class="px-4 py-2.5 font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
                                     <i class="fa-solid fa-file-export"></i> Export
                                 </button>
-                                <button v-if="currentUser.role === 'Admin'" @click="openImportModal('clients')" class="px-4 py-2.5 font-semibold border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
+                                <button v-if="can('manage_clients')" @click="openImportModal('clients')" class="px-4 py-2.5 font-semibold border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
                                     <i class="fa-solid fa-file-import"></i> Bulk Upload
                                 </button>
-                                <button v-if="currentUser.role === 'Admin'" @click="showClientModal = true" class="px-5 py-2.5 font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
+                                <button v-if="can('manage_clients')" @click="showClientModal = true" class="px-5 py-2.5 font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
                                     <i class="fa-solid fa-plus"></i> Add Client
                                 </button>
                             </div>
@@ -419,7 +437,10 @@
                                             <span class="inline-block mt-1 bg-accent-light text-accent px-2 py-0.5 rounded-md text-[12px] font-semibold">{{ client.group_name || 'Individual' }}</span>
                                         </div>
                                     </div>
-                                    <button v-if="currentUser.role === 'Admin'" @click="startEditClient(client)" class="text-gray-400 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg transition shrink-0" title="Edit client"><i class="fa-solid fa-pen text-[13px]"></i></button>
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <button v-if="can('manage_clients')" @click="startEditClient(client)" class="text-gray-400 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg transition" title="Edit client"><i class="fa-solid fa-pen text-[13px]"></i></button>
+                                        <button v-if="can('delete_client')" @click="deleteClient(client)" class="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete client"><i class="fa-solid fa-trash-can text-[13px]"></i></button>
+                                    </div>
                                 </div>
                                 <div class="grid grid-cols-2 gap-y-3 gap-x-2 text-[13.5px] border-t border-gray-100 pt-4">
                                     <div><span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wide block mb-0.5">Entity</span><span class="text-gray-700 font-medium">{{ client.entity_type }}</span></div>
@@ -461,10 +482,10 @@
                                 <button @click="openExportModal('services')" class="px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5">
                                     <i class="fa-solid fa-file-export"></i> Export
                                 </button>
-                                <button v-if="currentUser.role === 'Admin'" @click="openImportModal('services')" class="px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5">
+                                <button v-if="can('manage_services')" @click="openImportModal('services')" class="px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5">
                                     <i class="fa-solid fa-file-import"></i> Bulk Upload
                                 </button>
-                                <button v-if="currentUser.role === 'Admin'" @click="showServiceModal = true" class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1.5">
+                                <button v-if="can('manage_services')" @click="showServiceModal = true" class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1.5">
                                     <i class="fa-solid fa-folder-plus text-xs"></i> Create Service
                                 </button>
                             </div>
@@ -475,7 +496,7 @@
                                 <div>
                                     <div class="flex justify-between items-start mb-3">
                                         <h4 class="text-base font-bold text-gray-850 truncate max-w-xs leading-snug flex items-center gap-1.5">
-                                            <button v-if="currentUser.role === 'Admin'" @click="startEditService(srv)" class="text-xs text-accent hover:text-accent-hover hover:bg-accent-light p-1 rounded-lg transition" title="Edit Service details">
+                                            <button v-if="can('manage_services')" @click="startEditService(srv)" class="text-xs text-accent hover:text-accent-hover hover:bg-accent-light p-1 rounded-lg transition" title="Edit Service details">
                                                 <i class="fa-solid fa-pen"></i>
                                             </button>
                                             <span>{{ srv.name }}</span>
@@ -500,7 +521,7 @@
                                 
                                 <!-- Launch single task shortcut for this template (Admin only) -->
                                 <div class="border-t pt-3 flex justify-end">
-                                    <button v-if="currentUser.role === 'Admin'" @click="launchTaskFromService(srv)" class="px-4 py-2 bg-accent-light hover:bg-accent text-accent hover:text-white border border-accent/25 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                                    <button v-if="can('create_task')" @click="launchTaskFromService(srv)" class="px-4 py-2 bg-accent-light hover:bg-accent text-accent hover:text-white border border-accent/25 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
                                         <i class="fa-solid fa-bolt text-[10px]"></i> Launch Task
                                     </button>
                                     <span v-else class="text-[10px] text-gray-400 italic font-medium"><i class="fa-solid fa-check mr-1 text-green-500"></i> Catalog Verified</span>
@@ -509,8 +530,8 @@
                         </div>
                     </main>
 
-                    <!-- 5. USERS TAB (Admin only) -->
-                    <main v-if="currentTab === 'users' && currentUser.role === 'Admin'" class="p-8 space-y-6 max-w-5xl mx-auto">
+                    <!-- 5. USERS TAB (manage_users) -->
+                    <main v-if="currentTab === 'users' && can('manage_users')" class="p-8 space-y-6 max-w-5xl mx-auto">
                         <div class="flex items-center justify-between">
                             <div>
                                 <h3 class="text-lg font-bold text-gray-800">Firm Personnel Directory</h3>
@@ -523,7 +544,7 @@
                                 <button @click="openImportModal('users')" class="px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5">
                                     <i class="fa-solid fa-file-import"></i> Bulk Upload
                                 </button>
-                                <button @click="showUserModal = true" class="px-4 py-2 bg-primary hover:bg-blue-800 text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1">
+                                <button @click="openUserModal()" class="px-4 py-2 bg-primary hover:bg-blue-800 text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1">
                                     <i class="fa-solid fa-plus text-xs"></i> Add Staff
                                 </button>
                             </div>
@@ -551,16 +572,19 @@
                                         <td class="py-4 px-6 font-mono text-xs text-gray-600 font-semibold">{{ usr.username }}</td>
                                         <td class="py-4 px-6">
                                             <span class="px-2.5 py-0.5 rounded text-xs font-bold"
-                                                  :class="usr.role === 'Admin' ? 'bg-indigo-50 text-indigo-700 border border-indigo-150' : 'bg-gray-100 text-gray-600'">
+                                                  :class="{
+                                                      'bg-indigo-50 text-indigo-700 border border-indigo-150': usr.role === 'Admin' || usr.role === 'Partner',
+                                                      'bg-amber-50 text-amber-700 border border-amber-150': usr.role === 'Manager',
+                                                      'bg-gray-100 text-gray-600': usr.role === 'Employee'
+                                                  }">
                                                 {{ usr.role }}
                                             </span>
                                         </td>
                                         <td class="py-4 px-6 text-center whitespace-nowrap">
-                                            <!-- Edit staff details pencil (Admin only) -->
                                             <button @click="startEditUser(usr)" class="text-xs text-indigo-650 hover:text-indigo-800 font-bold transition hover:underline mr-4" title="Edit Staff account">
                                                 <i class="fa-solid fa-pen mr-1"></i> Edit
                                             </button>
-                                            <button @click="deleteUser(usr)" class="text-xs text-red-500 hover:text-red-700 font-bold transition hover:underline" :disabled="usr.username === 'admin'">
+                                            <button v-if="can('delete_user')" @click="openDeleteUser(usr)" class="text-xs text-red-500 hover:text-red-700 font-bold transition hover:underline disabled:opacity-40 disabled:cursor-not-allowed" :disabled="usr.username === 'admin' || usr.id === currentUser.id">
                                                 <i class="fa-solid fa-trash-can mr-1"></i> Delete
                                             </button>
                                         </td>
@@ -679,7 +703,7 @@
                                 <button @click="openExportModal('activity')" class="px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
                                     <i class="fa-solid fa-file-export"></i> Export
                                 </button>
-                                <button v-if="currentUser.role === 'Admin'" @click="openClearLogModal" class="px-4 py-2 border border-red-200 text-red-600 hover:bg-red-50 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                                <button v-if="isAdminOrPartner" @click="openClearLogModal" class="px-4 py-2 border border-red-200 text-red-600 hover:bg-red-50 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
                                     <i class="fa-solid fa-trash-can"></i> Clear Log
                                 </button>
                             </div>
@@ -836,7 +860,7 @@
                         <div class="app-card p-6">
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
                                 <h3 class="text-[17px] font-semibold text-gray-800 flex items-center gap-2"><i class="fa-solid fa-chart-line text-accent"></i> Staff Performance</h3>
-                                <div v-if="currentUser.role === 'Admin'" class="flex items-center gap-2">
+                                <div v-if="isAdminOrPartner" class="flex items-center gap-2">
                                     <label class="text-[13px] text-gray-500 font-medium">Staff member</label>
                                     <select v-model="selectedReportUser" class="rounded-xl border border-gray-200 p-2.5 text-[14px] bg-white min-w-[190px]">
                                         <option value="">Select a user…</option>
@@ -888,7 +912,7 @@
             </div>
 
             <!-- MODAL: ADD / EDIT TASK -->
-            <div v-if="showTaskModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+            <div v-if="showTaskModal && can('create_task')" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
                 <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-100 overflow-hidden transform scale-100 transition duration-300 max-h-[90vh] flex flex-col">
                     <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
                         <h4 class="text-base font-bold flex items-center gap-1.5">
@@ -978,7 +1002,7 @@
             </div>
 
             <!-- MODAL: ADD / EDIT CLIENT MASTER -->
-            <div v-if="showClientModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+            <div v-if="showClientModal && can('manage_clients')" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
                 <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg border border-gray-100 overflow-hidden max-h-[90vh] flex flex-col">
                     <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
                         <h4 class="text-base font-bold flex items-center gap-1.5">
@@ -1043,7 +1067,7 @@
             </div>
 
             <!-- MODAL: ADD / EDIT PERSONNEL -->
-            <div v-if="showUserModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+            <div v-if="showUserModal && can('manage_users')" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
                 <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-100 overflow-hidden max-h-[90vh] flex flex-col">
                     <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
                         <h4 class="text-base font-bold flex items-center gap-1.5">
@@ -1069,13 +1093,23 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Access Role</label>
-                            <div v-if="editingUserId" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-gray-50 text-gray-600 flex items-center justify-between gap-2">
-                                <span class="font-semibold">{{ userForm.role }}</span>
-                                <span class="text-[11px] text-gray-400">Role can't be changed here</span>
-                            </div>
+                            <select v-if="canEditRolePerms" v-model="userForm.role" @change="onUserRoleChange" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-700">
+                                <option v-for="r in assignableRoles" :key="r" :value="r">{{ r }}</option>
+                            </select>
                             <div v-else class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-gray-50 text-gray-600 flex items-center justify-between gap-2">
-                                <span class="font-semibold">Employee</span>
-                                <span class="text-[11px] text-gray-400">New staff are always Employees</span>
+                                <span class="font-semibold">{{ userForm.role }}</span>
+                                <span class="text-[11px] text-gray-400">{{ editingUserId ? "Role can't be changed here" : 'New staff are Employees' }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Permission toggles (Admin/Partner only). Defaults follow the role; flip any per person. -->
+                        <div v-if="canEditRolePerms">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Permissions <span class="font-medium normal-case text-gray-400">— defaults from role, override per person</span></label>
+                            <div class="border border-gray-150 rounded-xl divide-y divide-gray-50 max-h-56 overflow-y-auto">
+                                <label v-for="cap in CAPABILITIES" :key="cap" class="flex items-center justify-between gap-3 px-3.5 py-2 hover:bg-gray-50 cursor-pointer">
+                                    <span class="text-sm text-gray-700">{{ CAPABILITY_LABELS[cap] }}</span>
+                                    <input type="checkbox" v-model="userForm.permissions[cap]" class="shrink-0">
+                                </label>
                             </div>
                         </div>
                         <div class="flex justify-end gap-2 pt-2 border-t mt-4 text-xs font-semibold">
@@ -1089,7 +1123,7 @@
             </div>
 
             <!-- MODAL: ADD / EDIT CUSTOM SERVICE -->
-            <div v-if="showServiceModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div v-if="showServiceModal && can('manage_services')" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                 <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-150 overflow-hidden transform scale-100 transition duration-300 animate-fade-in max-h-[90vh] flex flex-col">
                     <div class="bg-primary text-white px-6 py-4 flex items-center justify-between border-b border-white/10 shrink-0">
                         <h4 class="text-base font-bold flex items-center gap-1.5">
@@ -1175,7 +1209,7 @@
                                         </div>
                                         
                                         <!-- Password Delete Action: visible strictly only to Admin and Super Users -->
-                                        <button v-if="currentUser.role === 'Admin'" @click="deleteCredential(vc.id)" class="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete Credential">
+                                        <button v-if="isAdminOrPartner" @click="deleteCredential(vc.id)" class="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete Credential">
                                             <i class="fa-solid fa-trash-can text-sm"></i>
                                         </button>
                                     </div>
@@ -1237,14 +1271,14 @@
                         </div>
                         <h3 class="text-lg font-bold truncate leading-tight">{{ contactClientObj.name }}</h3>
                         <span class="text-[10px] text-blue-300">
-                            {{ currentUser.role === 'Admin' ? 'Displaying all contact channels.' : 'Only accountant contacts are visible for security.' }}
+                            {{ canSeeAll ? 'Displaying all contact channels.' : 'Only accountant contacts are visible for security.' }}
                         </span>
                     </div>
 
                     <!-- Contacts Content Scroll -->
                     <div class="flex-1 overflow-y-auto p-6 space-y-6">
                         <!-- Add New Contact (Admin Only) -->
-                        <div v-if="currentUser.role === 'Admin'" class="bg-gray-50 rounded-xl border border-gray-150 p-4 space-y-3.5">
+                        <div v-if="isAdminOrPartner" class="bg-gray-50 rounded-xl border border-gray-150 p-4 space-y-3.5">
                             <h4 class="text-xs font-bold text-gray-600 uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid fa-user-plus text-gray-500"></i> Register New Contact</h4>
                             <form @submit.prevent="saveVaultContact" class="space-y-3">
                                 <div class="grid grid-cols-2 gap-2">
@@ -1351,7 +1385,7 @@
             </div>
 
             <!-- MODAL: ASSIGN TASK (when dragging from the Unassigned column) -->
-            <div v-if="showAssignModal && assignTargetTask && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+            <div v-if="showAssignModal && assignTargetTask && can('assign_task')" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
                 <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm border border-gray-100 overflow-hidden">
                     <div class="bg-primary text-white px-6 py-4 flex items-center justify-between">
                         <h4 class="text-base font-semibold flex items-center gap-2"><i class="fa-solid fa-user-plus"></i> Assign Task</h4>
@@ -1444,7 +1478,7 @@
             </div>
 
             <!-- MODAL: BULK CLIENT UPLOAD -->
-            <div v-if="showImportModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+            <div v-if="showImportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
                 <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl border border-gray-100 overflow-hidden max-h-[90vh] flex flex-col">
                     <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
                         <h4 class="text-base font-bold flex items-center gap-2"><i class="fa-solid fa-file-import"></i> Bulk Upload {{ importConfig.title }}</h4>
@@ -1504,7 +1538,7 @@
             </div>
 
             <!-- MODAL: CLEAR ACTIVITY LOG (admin) -->
-            <div v-if="showClearLogModal && currentUser.role === 'Admin'" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+            <div v-if="showClearLogModal && isAdminOrPartner" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
                 <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-100 overflow-hidden">
                     <div class="bg-red-600 text-white px-6 py-4 flex items-center justify-between">
                         <h4 class="text-base font-bold flex items-center gap-2"><i class="fa-solid fa-trash-can"></i> Clear Activity Log</h4>
@@ -1533,6 +1567,38 @@
                         <button @click="confirmClearLog" :disabled="clearLogBusy" class="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition shadow disabled:opacity-50 flex items-center gap-2">
                             <i class="fa-solid" :class="clearLogBusy ? 'fa-spinner fa-spin' : 'fa-trash-can'"></i>
                             {{ clearLogBusy ? 'Clearing…' : 'Clear Entries' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL: DELETE STAFF (with mandatory task reassignment) -->
+            <div v-if="showDeleteUserModal && deleteUserTarget" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-100 overflow-hidden">
+                    <div class="bg-red-600 text-white px-6 py-4 flex items-center justify-between">
+                        <h4 class="text-base font-bold flex items-center gap-2"><i class="fa-solid fa-user-xmark"></i> Delete Staff</h4>
+                        <button @click="closeDeleteUser" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <p class="text-sm text-gray-600">You're about to delete <span class="font-semibold text-gray-800">{{ deleteUserTarget.full_name }}</span> <span class="text-gray-400">({{ deleteUserTarget.role }})</span>.</p>
+                        <div v-if="deleteUserTaskCount > 0" class="space-y-2">
+                            <div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-sm">
+                                <i class="fa-solid fa-triangle-exclamation mr-1.5"></i>This person still has <strong>{{ deleteUserTaskCount }}</strong> task(s). Reassign them before deleting.
+                            </div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider">Reassign all their tasks to</label>
+                            <select v-model="deleteReassignTo" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white">
+                                <option value="">Select a staff member…</option>
+                                <option v-for="u in reassignCandidates" :key="u.id" :value="u.id">{{ u.full_name }} ({{ u.role }})</option>
+                            </select>
+                        </div>
+                        <p v-else class="text-sm text-gray-500">This person has no tasks assigned, so they can be deleted directly.</p>
+                        <div v-if="deleteUserError" class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm"><i class="fa-solid fa-circle-exclamation mr-1.5"></i>{{ deleteUserError }}</div>
+                    </div>
+                    <div class="flex justify-end gap-2 px-6 py-4 border-t bg-gray-50/50">
+                        <button @click="closeDeleteUser" class="px-4 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Cancel</button>
+                        <button @click="confirmDeleteUser" :disabled="deleteUserBusy" class="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition shadow disabled:opacity-50 flex items-center gap-2">
+                            <i class="fa-solid" :class="deleteUserBusy ? 'fa-spinner fa-spin' : 'fa-user-xmark'"></i>
+                            {{ deleteUserBusy ? 'Deleting…' : 'Delete Staff' }}
                         </button>
                     </div>
                 </div>

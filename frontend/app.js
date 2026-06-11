@@ -652,16 +652,12 @@ createApp({
                 });
                 const t = tasks.value.find(x => x.id === taskId);
                 if (t) t.status = newStatus;
-                // Celebrate completion + prompt to file the final timesheet
+                // On completion: bank the timer, then auto-fill time + date from it.
+                // The user only adds an optional description before logging.
                 if (newStatus === 'Completed' && t) {
+                    if (isTaskRunning(t.id)) { await pauseTaskTimer(t); }
                     launchConfetti();
-                    completionTask.value = t;
-                    tsForm.value.task_id = t.id;
-                    tsForm.value.log_date = new Date().toISOString().split('T')[0];
-                    if (!tsForm.value.hours && !tsForm.value.minutes) {
-                        tsForm.value.hours = 1;
-                        tsForm.value.minutes = 0;
-                    }
+                    prefillCompletionLog(t);
                     showCompletionModal.value = true;
                 }
             } catch (error) {
@@ -1573,6 +1569,23 @@ createApp({
             }
         };
 
+        // Fill the timesheet form from a task's tracked timer time + today's date.
+        const prefillCompletionLog = (task) => {
+            const secs = taskElapsedSeconds(task.id);
+            completionTask.value = task;
+            tsForm.value.task_id = task.id;
+            tsForm.value.hours = Math.min(23, Math.floor(secs / 3600));
+            tsForm.value.minutes = Math.floor((secs % 3600) / 60);
+            tsForm.value.log_date = new Date().toISOString().split('T')[0];
+            tsForm.value.description = '';
+        };
+
+        // "Add to time log" on a Completed task (no celebration).
+        const openLogModal = (task) => {
+            prefillCompletionLog(task);
+            showCompletionModal.value = true;
+        };
+
         const submitCompletionLog = async () => {
             await logTimesheet();
             showCompletionModal.value = false;
@@ -2230,6 +2243,7 @@ createApp({
             completionTask,
             submitCompletionLog,
             closeCompletionModal,
+            openLogModal,
             // Exports (Excel / PDF)
             showExportModal,
             exportBusy,

@@ -389,11 +389,16 @@
                                             <span class="text-[12.5px] text-gray-500 inline-flex items-center gap-1.5 truncate">
                                                 <i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}<template v-if="task.delegated_to_name"> <i class="fa-solid fa-arrow-right-long text-gray-300 mx-0.5"></i> {{ task.delegated_to_name }}</template>
                                             </span>
-                                            <!-- Completed cards: bill the task instead of timing it -->
-                                            <button v-if="col.key === 'Completed' && can('manage_billing')" @click="openBillingModal(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-white inline-flex items-center gap-1.5 shrink-0 bg-emerald-600 hover:bg-emerald-700 transition">
-                                                <i class="fa-solid fa-file-invoice-dollar text-[10px]"></i> Billed
-                                            </button>
-                                            <template v-else-if="col.key !== 'Completed' && task.assigned_to">
+                                            <!-- Completed cards: log time + (optionally) bill -->
+                                            <div v-if="col.key === 'Completed'" class="flex items-center gap-1 shrink-0">
+                                                <button @click="openLogModal(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-gray-600 hover:text-white hover:bg-accent transition inline-flex items-center gap-1.5 border border-gray-200" title="Add to time log">
+                                                    <i class="fa-regular fa-clock text-[10px]"></i> Log
+                                                </button>
+                                                <button v-if="can('manage_billing')" @click="openBillingModal(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-white inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 transition" title="Bill this task">
+                                                    <i class="fa-solid fa-file-invoice-dollar text-[10px]"></i> Billed
+                                                </button>
+                                            </div>
+                                            <template v-else-if="task.assigned_to">
                                                 <div class="flex items-center gap-1 shrink-0">
                                                     <button v-if="can('reset_timer') && taskHasTime(task.id)" @click="resetTaskTimer(task)" class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition" title="Reset timer"><i class="fa-solid fa-rotate-left text-[11px]"></i></button>
                                                     <button v-if="!isTaskRunning(task.id)" @click="startTaskTimer(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-gray-600 hover:text-white hover:bg-accent transition inline-flex items-center gap-1.5 border border-gray-200" :title="taskHasTime(task.id) ? 'Resume timer' : 'Start timer'">
@@ -1544,28 +1549,24 @@
                         <p class="text-xs text-green-50 mt-0.5" v-if="completionTask">{{ completionTask.client_name }} — {{ completionTask.service_name }}</p>
                     </div>
                     <form @submit.prevent="submitCompletionLog" class="p-6 space-y-4 flex-1 overflow-y-auto">
-                        <p class="text-sm text-gray-600 text-center">Great work! File your final timesheet for this task.</p>
-                        <div>
-                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Date</label>
-                            <input v-model="tsForm.log_date" type="date" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
-                        </div>
-                        <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-gray-50 rounded-xl p-4 flex items-center justify-between gap-4">
                             <div>
-                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Hours</label>
-                                <input v-model.number="tsForm.hours" type="number" min="0" max="23" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono text-center">
+                                <div class="text-[11px] text-gray-400 uppercase tracking-wide font-semibold">Time tracked</div>
+                                <div class="text-2xl font-semibold text-gray-800 font-mono">{{ tsForm.hours }}h {{ tsForm.minutes }}m</div>
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Minutes</label>
-                                <input v-model.number="tsForm.minutes" type="number" min="0" max="59" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono text-center">
+                            <div class="text-right">
+                                <div class="text-[11px] text-gray-400 uppercase tracking-wide font-semibold">Completion date</div>
+                                <div class="text-[15px] font-semibold text-gray-700 font-mono">{{ tsForm.log_date }}</div>
                             </div>
                         </div>
+                        <p class="text-[12px] text-gray-400 text-center">Time and date are recorded automatically from the timer.</p>
                         <div>
-                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Work Description</label>
-                            <textarea v-model="tsForm.description" rows="3" required placeholder="Summary of completed work..." class="w-full rounded-xl border border-gray-200 p-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary"></textarea>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Description <span class="font-medium normal-case text-gray-400">(optional)</span></label>
+                            <textarea v-model="tsForm.description" rows="3" placeholder="Summary of completed work…" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary"></textarea>
                         </div>
                         <div class="flex justify-end gap-2 pt-1">
                             <button type="button" @click="closeCompletionModal" class="px-4 py-2 text-xs font-bold text-gray-500 hover:text-gray-700 transition">Skip for now</button>
-                            <button type="submit" class="bg-primary hover:bg-primary-hover text-white font-bold py-2.5 px-5 rounded-xl text-sm shadow-md transition flex items-center gap-1.5"><i class="fa-solid fa-circle-check"></i> Submit Time Log</button>
+                            <button type="submit" class="bg-primary hover:bg-primary-hover text-white font-bold py-2.5 px-5 rounded-xl text-sm shadow-md transition flex items-center gap-1.5"><i class="fa-solid fa-circle-check"></i> Add to time log</button>
                         </div>
                     </form>
                 </div>

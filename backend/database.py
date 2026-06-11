@@ -192,6 +192,20 @@ def init_db():
         if col not in tb_cols4:
             cursor.execute(ddl)
 
+    # Auto-migration: per-financial-year task number (resets to 1 each FY).
+    # The global `id` stays the internal key; `task_no` is the user-facing ID.
+    cursor.execute("PRAGMA table_info(task_board)")
+    tb_cols5 = [row[1] for row in cursor.fetchall()]
+    if 'task_no' not in tb_cols5:
+        cursor.execute("ALTER TABLE task_board ADD COLUMN task_no INTEGER")
+        # Backfill: number existing tasks 1..N within each financial year, ordered by id.
+        cursor.execute("SELECT id, financial_year FROM task_board ORDER BY financial_year, id")
+        counters = {}
+        for row in cursor.fetchall():
+            fy = row[1] or ''
+            counters[fy] = counters.get(fy, 0) + 1
+            cursor.execute("UPDATE task_board SET task_no = ? WHERE id = ?", (counters[fy], row[0]))
+
     conn.commit()
     conn.close()
 

@@ -220,7 +220,7 @@
                         </div>
 
                         <!-- Kanban Columns -->
-                        <div class="flex gap-5 flex-1 min-h-0 overflow-x-auto pb-2">
+                        <div class="flex gap-4 flex-1 min-h-0 overflow-x-auto pb-2">
                             <div v-for="col in boardColumns" :key="col.key"
                                  class="kanban-col flex flex-col flex-1 min-w-[270px]"
                                  :class="{ 'drag-over': dragOverColumn === col.key }"
@@ -229,7 +229,7 @@
                                  @dragleave="onColumnDragLeave(col.key)"
                                  @drop.prevent="onColumnDrop(col.key)">
                                 <!-- Column header -->
-                                <div class="flex items-center justify-between px-4 pt-4 pb-3 shrink-0">
+                                <div class="flex items-center justify-between px-3 pt-3 pb-2 shrink-0">
                                     <div class="flex items-center gap-2">
                                         <span class="w-2.5 h-2.5 rounded-full" :style="{ backgroundColor: col.accent }"></span>
                                         <h3 class="text-[15px] font-semibold text-gray-800">{{ col.label }}</h3>
@@ -237,9 +237,9 @@
                                     <span class="text-[13px] font-semibold text-gray-400 bg-black/5 rounded-full px-2.5 py-0.5">{{ col.tasks.length }}</span>
                                 </div>
                                 <!-- Column body -->
-                                <div class="flex-1 overflow-y-auto px-3 pb-3 space-y-3">
+                                <div class="flex-1 overflow-y-auto px-2.5 pb-2.5 space-y-2.5">
                                     <div v-for="task in col.tasks" :key="task.id"
-                                         class="kanban-card p-3.5"
+                                         class="kanban-card p-2.5"
                                          :class="['rail-' + col.key.toLowerCase(), { dragging: draggedTaskId === task.id }]"
                                          draggable="true"
                                          @dragstart="onTaskDragStart(task, $event)"
@@ -255,14 +255,14 @@
                                                 </button>
                                             </div>
                                         </div>
-                                        <div class="mt-1.5 inline-flex items-center bg-gray-100 text-gray-600 px-2.5 py-1 rounded-md text-[12.5px] font-medium">
+                                        <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2.5 py-1 rounded-md text-[12.5px] font-medium">
                                             {{ task.service_name }}
                                         </div>
-                                        <div class="mt-3 flex items-center justify-between text-[13px] text-gray-500">
-                                            <span class="font-medium">{{ task.financial_year }} · {{ task.period }}</span>
+                                        <div class="mt-2 flex items-center justify-between text-[13px] text-gray-500">
+                                            <span class="font-medium"><span class="text-gray-400">#{{ task.task_no }}</span> · {{ task.financial_year }} · {{ task.period }}</span>
                                             <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
                                         </div>
-                                        <div class="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                                        <div class="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
                                             <span class="text-[12.5px] text-gray-500 inline-flex items-center gap-1.5 truncate">
                                                 <i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}<template v-if="task.delegated_to_name"> <i class="fa-solid fa-arrow-right-long text-gray-300 mx-0.5"></i> {{ task.delegated_to_name }}</template>
                                             </span>
@@ -361,8 +361,8 @@
                         </div>
 
                         <!-- Tasks Card Grid -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 animate-fade-in">
-                            <div v-for="task in filteredTasks" :key="task.id" class="app-card p-5 flex flex-col gap-3"
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
+                            <div v-for="task in filteredTasks" :key="task.id" class="app-card p-3.5 flex flex-col gap-2.5"
                                  :class="'rail-' + columnKeyOf(task).toLowerCase()">
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="min-w-0">
@@ -374,7 +374,7 @@
                                 </div>
 
                                 <div class="flex items-center justify-between text-[13.5px] text-gray-500">
-                                    <span class="font-medium">{{ task.financial_year }} · {{ task.period }}</span>
+                                    <span class="font-medium"><span class="text-gray-400">#{{ task.task_no }}</span> · {{ task.financial_year }} · {{ task.period }}</span>
                                     <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
                                 </div>
 
@@ -443,8 +443,8 @@
                         </div>
 
                         <!-- Clients Card Grid -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 animate-fade-in">
-                            <div v-for="client in paginatedClients" :key="client.id" class="app-card p-5 flex flex-col gap-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
+                            <div v-for="client in paginatedClients" :key="client.id" class="app-card p-3.5 flex flex-col gap-3">
                                 <div class="flex items-start justify-between">
                                     <div class="flex items-center gap-3 min-w-0">
                                         <div class="w-11 h-11 rounded-full text-white font-semibold flex items-center justify-center uppercase text-[17px] shrink-0" style="background: linear-gradient(160deg, var(--color-accent), var(--color-primary));">{{ client.name ? client.name[0] : '?' }}</div>
@@ -507,8 +507,8 @@
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-                            <div v-for="srv in services" :key="srv.id" class="bg-white rounded-2xl shadow-sm border border-gray-150 p-6 flex flex-col justify-between hover:shadow-md transition duration-300 relative overflow-hidden group border-t-4 border-accent">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
+                            <div v-for="srv in services" :key="srv.id" class="bg-white rounded-2xl shadow-sm border border-gray-150 p-4 flex flex-col justify-between hover:shadow-md transition duration-300 relative overflow-hidden group border-t-4 border-accent">
                                 <div>
                                     <div class="flex justify-between items-start mb-3">
                                         <h4 class="text-base font-bold text-gray-850 truncate max-w-xs leading-snug flex items-center gap-1.5">
@@ -773,23 +773,23 @@
                     <!-- 7. REPORTS TAB -->
                     <main v-if="currentTab === 'reports'" class="p-7 space-y-6 max-w-7xl mx-auto">
                         <!-- Summary Cards -->
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                            <div class="app-card p-6 rail-working">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div class="app-card p-4 rail-working">
                                 <p class="text-[12px] text-gray-400 font-semibold uppercase tracking-wide">Logged Today</p>
                                 <p class="text-3xl font-semibold text-gray-800 mt-1">{{ reportSummary.today }}</p>
                             </div>
-                            <div class="app-card p-6 rail-completed">
+                            <div class="app-card p-4 rail-completed">
                                 <p class="text-[12px] text-gray-400 font-semibold uppercase tracking-wide">Logged This Month</p>
                                 <p class="text-3xl font-semibold text-gray-800 mt-1">{{ reportSummary.month }}</p>
                             </div>
-                            <div class="app-card p-6 rail-pending">
+                            <div class="app-card p-4 rail-pending">
                                 <p class="text-[12px] text-gray-400 font-semibold uppercase tracking-wide">Filtered Total ({{ reportSummary.entries }} logs)</p>
                                 <p class="text-3xl font-semibold text-gray-800 mt-1">{{ reportSummary.filtered }}</p>
                             </div>
                         </div>
 
                         <!-- Time-range Filter -->
-                        <div class="app-card p-5 flex flex-wrap items-end gap-4">
+                        <div class="app-card p-4 flex flex-wrap items-end gap-4">
                             <div>
                                 <label class="block text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Time Range</label>
                                 <select v-model="reportRange" class="rounded-xl border border-gray-200 p-2.5 text-[14px] bg-white">
@@ -829,7 +829,7 @@
                         <!-- Three-column aggregations: Client / User / Service -->
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
                             <!-- Client-wise -->
-                            <div class="app-card p-5">
+                            <div class="app-card p-4">
                                 <h3 class="text-[15px] font-semibold text-gray-800 flex items-center gap-2 mb-4"><i class="fa-solid fa-user-group text-accent"></i> Client-wise</h3>
                                 <div v-if="reportClientRows.length" class="space-y-3">
                                     <div v-for="row in reportClientRows" :key="row.name" class="flex items-center justify-between gap-3">
@@ -843,7 +843,7 @@
                                 <div v-else class="text-[13px] text-gray-400 italic py-6 text-center">No data in range.</div>
                             </div>
                             <!-- User-wise -->
-                            <div class="app-card p-5">
+                            <div class="app-card p-4">
                                 <h3 class="text-[15px] font-semibold text-gray-800 flex items-center gap-2 mb-4"><i class="fa-solid fa-user-shield text-accent"></i> User-wise</h3>
                                 <div v-if="reportUserRows.length" class="space-y-3">
                                     <div v-for="row in reportUserRows" :key="row.name" class="flex items-center justify-between gap-3">
@@ -857,7 +857,7 @@
                                 <div v-else class="text-[13px] text-gray-400 italic py-6 text-center">No data in range.</div>
                             </div>
                             <!-- Service-wise -->
-                            <div class="app-card p-5">
+                            <div class="app-card p-4">
                                 <h3 class="text-[15px] font-semibold text-gray-800 flex items-center gap-2 mb-4"><i class="fa-solid fa-layer-group text-accent"></i> Service-wise</h3>
                                 <div v-if="reportServiceRows.length" class="space-y-3">
                                     <div v-for="row in reportServiceRows" :key="row.name" class="flex items-center justify-between gap-3">
@@ -873,7 +873,7 @@
                         </div>
 
                         <!-- Staff Performance drill-down -->
-                        <div class="app-card p-6">
+                        <div class="app-card p-4">
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
                                 <h3 class="text-[17px] font-semibold text-gray-800 flex items-center gap-2"><i class="fa-solid fa-chart-line text-accent"></i> Staff Performance</h3>
                                 <div v-if="isAdminOrPartner" class="flex items-center gap-2">
@@ -936,14 +936,14 @@
                                 <i class="fa-solid fa-file-export"></i> Export
                             </button>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 animate-fade-in">
-                            <div v-for="task in billedTasks" :key="task.id" class="app-card p-5 flex flex-col gap-3 rail-completed">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
+                            <div v-for="task in billedTasks" :key="task.id" class="app-card p-3.5 flex flex-col gap-2.5 rail-completed">
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="min-w-0">
                                         <div class="font-semibold text-[15px] text-gray-800 truncate">{{ task.client_name }}</div>
                                         <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12.5px] font-medium">{{ task.service_name }}</div>
                                     </div>
-                                    <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">{{ task.financial_year }} · {{ task.period }}</span>
+                                    <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">#{{ task.task_no }} · {{ task.financial_year }} · {{ task.period }}</span>
                                 </div>
                                 <div class="grid grid-cols-3 gap-2 text-center border-y border-gray-100 py-2.5">
                                     <div><p class="text-[10.5px] text-gray-400 uppercase tracking-wide">Billed</p><p class="text-[14px] font-semibold text-gray-800 mt-0.5">{{ fmtMoney(task.billed_amount) }}</p></div>
@@ -972,14 +972,14 @@
                                 <i class="fa-solid fa-file-export"></i> Export
                             </button>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 animate-fade-in">
-                            <div v-for="task in receivedTasks" :key="task.id" class="app-card p-5 flex flex-col gap-3" style="box-shadow: inset 4px 0 0 #059669;">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
+                            <div v-for="task in receivedTasks" :key="task.id" class="app-card p-3.5 flex flex-col gap-2.5" style="box-shadow: inset 4px 0 0 #059669;">
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="min-w-0">
                                         <div class="font-semibold text-[15px] text-gray-800 truncate">{{ task.client_name }}</div>
                                         <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12.5px] font-medium">{{ task.service_name }}</div>
                                     </div>
-                                    <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">{{ task.financial_year }} · {{ task.period }}</span>
+                                    <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">#{{ task.task_no }} · {{ task.financial_year }} · {{ task.period }}</span>
                                 </div>
                                 <div class="grid grid-cols-3 gap-2 text-center border-y border-gray-100 py-2.5">
                                     <div><p class="text-[10.5px] text-gray-400 uppercase tracking-wide">Billed</p><p class="text-[14px] font-semibold text-gray-800 mt-0.5">{{ fmtMoney(task.billed_amount) }}</p></div>

@@ -25,7 +25,7 @@ def get_activity_logs(db, username: str = None):
 def get_tasks_with_details(db):
     cursor = db.cursor()
     cursor.execute('''
-        SELECT t.id, c.name as client_name, s.name as service_name, t.financial_year, t.period,
+        SELECT t.id, t.task_no, c.name as client_name, s.name as service_name, t.financial_year, t.period,
                t.status, t.assigned_to, u.full_name as assigned_to_name, t.client_id, t.due_date,
                t.delegated_to, d.full_name as delegated_to_name,
                t.billing_stage, t.billed_amount, t.gst_amount, t.total_amount,
@@ -37,6 +37,13 @@ def get_tasks_with_details(db):
         LEFT JOIN users d ON t.delegated_to = d.id
     ''')
     return [dict(row) for row in cursor.fetchall()]
+
+def next_task_no(db, financial_year):
+    """Next per-financial-year task number (resets to 1 for a new FY)."""
+    cursor = db.cursor()
+    cursor.execute("SELECT MAX(task_no) AS m FROM task_board WHERE financial_year = ?", (financial_year,))
+    row = cursor.fetchone()
+    return (row['m'] or 0) + 1
 
 def update_task_status(db, task_id: int, status: str):
     cursor = db.cursor()
@@ -169,13 +176,15 @@ def create_task(db, task_data: dict):
         })
         
     last_id = None
+    seq = next_task_no(db, task_data['financial_year'])
     for t in tasks_to_create:
         cursor.execute('''
-            INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (task_data['client_id'], task_data['service_id'], task_data['financial_year'], t['period'], task_data.get('status', 'Working'), t['assigned_to'], t['due_date']))
+            INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date, task_no)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (task_data['client_id'], task_data['service_id'], task_data['financial_year'], t['period'], task_data.get('status', 'Working'), t['assigned_to'], t['due_date'], seq))
         last_id = cursor.lastrowid
-        
+        seq += 1
+
     db.commit()
     return {"id": last_id, "created_count": len(tasks_to_create)}
 
@@ -267,12 +276,17 @@ def import_tasks(db, rows: list):
     Returns count created."""
     cursor = db.cursor()
     created = 0
+    seqs = {}   # per-FY running task number
     for row in rows:
+        fy = row['financial_year']
+        if fy not in seqs:
+            seqs[fy] = next_task_no(db, fy)
         cursor.execute('''
-            INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date, task_no)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (row['client_id'], row['service_id'], row['financial_year'], row['period'],
-              row.get('status', 'Working'), row.get('assigned_to'), row.get('due_date')))
+              row.get('status', 'Working'), row.get('assigned_to'), row.get('due_date'), seqs[fy]))
+        seqs[fy] += 1
         created += 1
     db.commit()
     return created
@@ -291,6 +305,7 @@ def create_bulk_tasks(db, bulk_data: dict):
     clients = cursor.fetchall()
     
     created = 0
+    seq = next_task_no(db, bulk_data['financial_year'])
     for client in clients:
         cursor.execute('''
             SELECT id FROM task_board 
@@ -299,9 +314,10 @@ def create_bulk_tasks(db, bulk_data: dict):
         
         if not cursor.fetchone():
             cursor.execute('''
-                INSERT INTO task_board (client_id, service_id, financial_year, period, status)
-                VALUES (?, ?, ?, ?, 'Working')
-            ''', (client['id'], bulk_data['service_id'], bulk_data['financial_year'], bulk_data['period']))
+                INSERT INTO task_board (client_id, service_id, financial_year, period, status, task_no)
+                VALUES (?, ?, ?, ?, 'Working', ?)
+            ''', (client['id'], bulk_data['service_id'], bulk_data['financial_year'], bulk_data['period'], seq))
+            seq += 1
             created += 1
             
     db.commit()

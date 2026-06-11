@@ -154,7 +154,7 @@ createApp({
         const taskSerial = (task) => {
             if (!task || !task.task_no) return '';
             const fy = task.financial_year ? task.financial_year.slice(2) : '';
-            return fy ? `FY${fy}: ${task.task_no}` : `#${task.task_no}`;
+            return fy ? `FY${fy}#${task.task_no}` : `#${task.task_no}`;
         };
 
         // Billing pipeline: a task with a billing_stage has left the active board

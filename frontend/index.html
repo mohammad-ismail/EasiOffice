@@ -79,13 +79,13 @@
         <template v-else>
             <!-- macOS-style Collapsible Sidebar -->
             <aside class="app-sidebar flex flex-col z-20 transition-all duration-300 ease-in-out shrink-0"
-                   :class="isSidebarCollapsed ? 'collapsed w-[4.25rem]' : 'w-[13.5rem]'">
-                <div class="h-16 flex items-center px-4 transition-all"
-                     :class="isSidebarCollapsed ? 'justify-center' : 'justify-start gap-2.5'">
-                    <img src="/static/logo.png" alt="EasiOffice" class="app-logo w-8 h-8 shrink-0 rounded-full" style="object-fit:cover;">
-                    <h1 v-show="!isSidebarCollapsed" class="brand-title text-[17px] font-semibold tracking-tight truncate">EasiOffice</h1>
+                   :class="isSidebarCollapsed ? 'collapsed w-[3.5rem]' : 'w-[11rem]'">
+                <div class="h-14 flex items-center px-3 transition-all"
+                     :class="isSidebarCollapsed ? 'justify-center' : 'justify-start gap-2'">
+                    <img src="/static/logo.png" alt="EasiOffice" class="app-logo w-7 h-7 shrink-0 rounded-full" style="object-fit:cover;">
+                    <h1 v-show="!isSidebarCollapsed" class="brand-title text-[14px] font-semibold tracking-tight truncate">EasiOffice</h1>
                 </div>
-                <nav class="flex-1 px-2.5 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
+                <nav class="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto overflow-x-hidden">
                     <a href="#" @click="currentTab = 'dashboard'" class="nav-link" :class="{ active: currentTab === 'dashboard' }" :title="isSidebarCollapsed ? 'Dashboard' : ''">
                         <i class="fa-solid fa-gauge-high"></i>
                         <span v-show="!isSidebarCollapsed">Dashboard</span>
@@ -129,14 +129,14 @@
                         <span v-show="!isSidebarCollapsed">Activity Log</span>
                     </a>
                 </nav>
-                <div class="p-2.5 border-t border-white/10 flex flex-col gap-2.5">
-                    <div v-show="!isSidebarCollapsed" class="flex flex-col gap-0.5 px-1.5 pb-1 animate-fade-in">
-                        <span class="text-[13px] font-semibold truncate" style="color:#ffffff;">{{ currentUser.full_name }}</span>
-                        <span class="text-[11px] flex items-center gap-1 font-medium" style="color:#8aaba6;">
-                            <i class="fa-solid fa-lock text-[10px]"></i> AES-256 encrypted
+                <div class="p-2 border-t border-white/10 flex flex-col gap-2">
+                    <div v-show="!isSidebarCollapsed" class="flex flex-col gap-0.5 px-1.5 pb-0.5 animate-fade-in">
+                        <span class="text-[12px] font-semibold truncate" style="color:#ffffff;">{{ currentUser.full_name }}</span>
+                        <span class="text-[10px] flex items-center gap-1 font-medium" style="color:#8aaba6;">
+                            <i class="fa-solid fa-lock text-[9px]"></i> AES-256 encrypted
                         </span>
                     </div>
-                    <button @click="handleLogout" class="w-full py-2 rounded-[10px] text-sm font-medium transition flex items-center justify-center gap-2" style="color:#f87171;" :title="isSidebarCollapsed ? 'Logout' : ''"
+                    <button @click="handleLogout" class="w-full py-1.5 rounded-[10px] text-[13px] font-medium transition flex items-center justify-center gap-2" style="color:#f87171;" :title="isSidebarCollapsed ? 'Logout' : ''"
                         onmouseover="this.style.background='rgba(248,113,113,0.12)'" onmouseout="this.style.background='transparent'">
                         <i class="fa-solid fa-arrow-right-from-bracket"></i>
                         <span v-show="!isSidebarCollapsed">Sign Out</span>

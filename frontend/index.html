@@ -271,7 +271,7 @@
                                             <button v-if="col.key === 'Completed' && can('manage_billing')" @click="openBillingModal(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-white inline-flex items-center gap-1.5 shrink-0 bg-emerald-600 hover:bg-emerald-700 transition">
                                                 <i class="fa-solid fa-file-invoice-dollar text-[10px]"></i> Billed
                                             </button>
-                                            <template v-else-if="col.key !== 'Completed'">
+                                            <template v-else-if="col.key !== 'Completed' && task.assigned_to">
                                                 <div class="flex items-center gap-1 shrink-0">
                                                     <button v-if="can('reset_timer') && taskHasTime(task.id)" @click="resetTaskTimer(task)" class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition" title="Reset timer"><i class="fa-solid fa-rotate-left text-[11px]"></i></button>
                                                     <button v-if="!isTaskRunning(task.id)" @click="startTaskTimer(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-gray-600 hover:text-white hover:bg-accent transition inline-flex items-center gap-1.5 border border-gray-200" :title="taskHasTime(task.id) ? 'Resume timer' : 'Start timer'">

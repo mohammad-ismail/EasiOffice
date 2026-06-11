@@ -150,6 +150,13 @@ createApp({
         };
         const visibleTasks = computed(() => tasks.value.filter(taskVisible));
 
+        // User-facing task serial: "FY25-26: 1" (per-financial-year number, resets each FY).
+        const taskSerial = (task) => {
+            if (!task || !task.task_no) return '';
+            const fy = task.financial_year ? task.financial_year.slice(2) : '';
+            return fy ? `FY${fy}: ${task.task_no}` : `#${task.task_no}`;
+        };
+
         // Billing pipeline: a task with a billing_stage has left the active board
         // and lives in the Billed / Received Fees sections instead.
         const isBilling = (t) => t.billing_stage === 'Billed' || t.billing_stage === 'Received';
@@ -1614,7 +1621,7 @@ createApp({
 
         // Reusable column sets
         const TASK_COLS = [
-            { key: 'task_no', label: 'Task ID' },
+            { key: 'task_serial', label: 'Task ID' },
             { key: 'client_name', label: 'Client' },
             { key: 'service_name', label: 'Service' },
             { key: 'financial_year', label: 'Financial Year' },
@@ -1645,7 +1652,7 @@ createApp({
             { key: 'description', label: 'Description' }
         ];
 
-        const taskRow = (t) => ({ ...t, assigned_to_name: t.assigned_to_name || 'Unassigned' });
+        const taskRow = (t) => ({ ...t, task_serial: taskSerial(t), assigned_to_name: t.assigned_to_name || 'Unassigned' });
         const clientRow = (c) => ({ ...c, group_name: c.group_name || 'Individual', assigned_to_name: c.assigned_to_name || 'Unassigned' });
         const tsRow = (ts) => ({ ...ts, duration: fmtDur(ts.hours, ts.minutes) });
 
@@ -1775,7 +1782,7 @@ createApp({
                 case 'received': {
                     const isRec = key === 'received';
                     const cols = [
-                        { key: 'task_no', label: 'Task ID' },
+                        { key: 'task_serial', label: 'Task ID' },
                         { key: 'client_name', label: 'Client' },
                         { key: 'service_name', label: 'Service' },
                         { key: 'financial_year', label: 'Financial Year' },
@@ -1789,7 +1796,7 @@ createApp({
                     const src = isRec ? receivedTasks : billedTasks;
                     return {
                         title: isRec ? 'Received Fees' : 'Billed', mode: 'section', columns: cols,
-                        rowsFn: () => src.value.slice(), filters: []
+                        rowsFn: () => src.value.map(t => ({ ...t, task_serial: taskSerial(t) })), filters: []
                     };
                 }
                 default:
@@ -2039,6 +2046,7 @@ createApp({
             // Kanban board + drag & drop
             boardColumns,
             columnKeyOf,
+            taskSerial,
             draggedTaskId,
             dragOverColumn,
             onTaskDragStart,

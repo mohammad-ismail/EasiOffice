@@ -259,7 +259,7 @@
                                             {{ task.service_name }}
                                         </div>
                                         <div class="mt-2 flex items-center justify-between text-[13px] text-gray-500">
-                                            <span class="font-medium"><span class="text-gray-400">#{{ task.task_no }}</span> · {{ task.financial_year }} · {{ task.period }}</span>
+                                            <span class="font-medium"><span class="text-gray-400">{{ taskSerial(task) }}</span> · {{ task.period }}</span>
                                             <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
                                         </div>
                                         <div v-if="task.estimated_minutes" class="text-[12px] text-gray-400 inline-flex items-center gap-1"><i class="fa-regular fa-hourglass-half"></i>Est {{ estDisplay(task.estimated_minutes) }}</div>
@@ -378,7 +378,7 @@
                                 </div>
 
                                 <div class="flex items-center justify-between text-[13.5px] text-gray-500">
-                                    <span class="font-medium"><span class="text-gray-400">#{{ task.task_no }}</span> · {{ task.financial_year }} · {{ task.period }}</span>
+                                    <span class="font-medium"><span class="text-gray-400">{{ taskSerial(task) }}</span> · {{ task.period }}</span>
                                     <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
                                 </div>
                                 <div v-if="task.estimated_minutes || taskHasTime(task.id)" class="flex items-center gap-3 text-[12.5px] text-gray-400">
@@ -1042,7 +1042,7 @@
                                         <div class="font-semibold text-[15px] text-gray-800 truncate">{{ task.client_name }}</div>
                                         <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12.5px] font-medium">{{ task.service_name }}</div>
                                     </div>
-                                    <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">#{{ task.task_no }} · {{ task.financial_year }} · {{ task.period }}</span>
+                                    <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">{{ taskSerial(task) }} · {{ task.period }}</span>
                                 </div>
                                 <div class="grid grid-cols-3 gap-2 text-center border-y border-gray-100 py-2.5">
                                     <div><p class="text-[10.5px] text-gray-400 uppercase tracking-wide">Billed</p><p class="text-[14px] font-semibold text-gray-800 mt-0.5">{{ fmtMoney(task.billed_amount) }}</p></div>
@@ -1078,7 +1078,7 @@
                                         <div class="font-semibold text-[15px] text-gray-800 truncate">{{ task.client_name }}</div>
                                         <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12.5px] font-medium">{{ task.service_name }}</div>
                                     </div>
-                                    <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">#{{ task.task_no }} · {{ task.financial_year }} · {{ task.period }}</span>
+                                    <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">{{ taskSerial(task) }} · {{ task.period }}</span>
                                 </div>
                                 <div class="grid grid-cols-3 gap-2 text-center border-y border-gray-100 py-2.5">
                                     <div><p class="text-[10.5px] text-gray-400 uppercase tracking-wide">Billed</p><p class="text-[14px] font-semibold text-gray-800 mt-0.5">{{ fmtMoney(task.billed_amount) }}</p></div>

@@ -222,7 +222,9 @@ createApp({
             status: 'Working',
             assigned_to: '',
             recurrence_type: 'one_time',
-            due_date: ''
+            due_date: '',
+            est_hours: 0,
+            est_minutes: 0
         });
 
         const clientForm = ref({
@@ -574,6 +576,7 @@ createApp({
                 clientGroups.value = await groupsRes.json();
                 timesheets.value = await timesheetsRes.json();
                 activityLogs.value = await logsRes.json();
+                await fetchTimers();
             } catch (error) {
                 console.error("Error loading firm data:", error);
             }
@@ -644,6 +647,7 @@ createApp({
         // Edit pre-fill tasks modal
         const startEditTask = (taskObj) => {
             editingTaskId.value = taskObj.id;
+            const est = taskObj.estimated_minutes || 0;
             taskForm.value = {
                 client_id: taskObj.client_id,
                 service_id: taskObj.service_id,
@@ -652,14 +656,16 @@ createApp({
                 status: taskObj.status,
                 assigned_to: taskObj.assigned_to || '',
                 recurrence_type: 'one_time',
-                due_date: taskObj.due_date || ''
+                due_date: taskObj.due_date || '',
+                est_hours: Math.floor(est / 60),
+                est_minutes: est % 60
             };
             showTaskModal.value = true;
         };
 
         const closeTaskModal = () => {
             editingTaskId.value = null;
-            taskForm.value = { client_id: '', service_id: '', financial_year: '2025-26', period: '', status: 'Working', assigned_to: '', recurrence_type: 'one_time', due_date: '' };
+            taskForm.value = { client_id: '', service_id: '', financial_year: '2025-26', period: '', status: 'Working', assigned_to: '', recurrence_type: 'one_time', due_date: '', est_hours: 0, est_minutes: 0 };
             showTaskModal.value = false;
         };
 
@@ -667,10 +673,12 @@ createApp({
             try {
                 const method = editingTaskId.value ? 'PUT' : 'POST';
                 const url = editingTaskId.value ? `/api/tasks/${editingTaskId.value}` : '/api/tasks';
+                const estimated_minutes = (Number(taskForm.value.est_hours) || 0) * 60 + (Number(taskForm.value.est_minutes) || 0);
+                const payload = { ...taskForm.value, estimated_minutes };
                 const res = await apiFetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(taskForm.value)
+                    body: JSON.stringify(payload)
                 });
                 if (res.ok) {
                     closeTaskModal();
@@ -1318,34 +1326,82 @@ createApp({
         // ===================== Client dual-view toggle =====================
         const clientView = ref('table');   // 'table' | 'grid'
 
-        // ===================== Active Task Timer (single active) =====================
-        const activeTimer = ref(null);     // { taskId, label, startMs }
-        const timerNow = ref(Date.now());
+        // ===================== Persistent task timers =====================
+        // One timer runs per user; starting another pauses (banks) the previous one,
+        // and resuming continues from the banked time. State lives server-side, so it
+        // survives reloads and is correct across the whole session.
+        const timers = ref({});                 // task_id -> { seconds, running }
+        const timersFetchedAt = ref(Date.now());
+        const tick = ref(0);                    // bumped every second to refresh live displays
         let timerInterval = null;
 
-        const startTimer = (task) => {
-            activeTimer.value = { taskId: task.id, label: `${task.client_name} - ${task.service_name}`, startMs: Date.now() };
-            timerNow.value = Date.now();
-            if (timerInterval) clearInterval(timerInterval);
-            timerInterval = setInterval(() => { timerNow.value = Date.now(); }, 1000);
+        const fetchTimers = async () => {
+            try {
+                const res = await apiFetch('/api/timers');
+                if (!res.ok) return;
+                const list = await res.json();
+                const map = {};
+                list.forEach(t => { map[t.task_id] = { seconds: t.seconds, running: t.running }; });
+                timers.value = map;
+                timersFetchedAt.value = Date.now();
+            } catch (e) { /* offline / ignore */ }
         };
 
-        const elapsedDisplay = computed(() => {
-            if (!activeTimer.value) return '00:00';
-            const s = Math.max(0, Math.floor((timerNow.value - activeTimer.value.startMs) / 1000));
-            return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-        });
+        const taskElapsedSeconds = (taskId) => {
+            const t = timers.value[taskId];
+            if (!t) return 0;
+            let s = t.seconds || 0;
+            if (t.running) { void tick.value; s += Math.max(0, Math.floor((Date.now() - timersFetchedAt.value) / 1000)); }
+            return s;
+        };
+        const fmtHMS = (s) => {
+            s = Math.max(0, Math.floor(s));
+            const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+            return h > 0
+                ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+                : `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        };
+        const taskTimerDisplay = (taskId) => fmtHMS(taskElapsedSeconds(taskId));
+        const isTaskRunning = (taskId) => !!(timers.value[taskId] && timers.value[taskId].running);
+        const taskHasTime = (taskId) => !!(timers.value[taskId] && (timers.value[taskId].seconds > 0 || timers.value[taskId].running));
 
-        const stopTimer = () => {
-            if (!activeTimer.value) return;
-            const totalSec = Math.floor((Date.now() - activeTimer.value.startMs) / 1000);
-            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-            tsForm.value.task_id = activeTimer.value.taskId;
-            tsForm.value.hours = Math.floor(totalSec / 3600);
-            tsForm.value.minutes = Math.floor((totalSec % 3600) / 60);
+        const runningTaskId = computed(() => {
+            void tick.value;
+            const id = Object.keys(timers.value).find(k => timers.value[k] && timers.value[k].running);
+            return id ? Number(id) : null;
+        });
+        const activeTimerTask = computed(() => runningTaskId.value
+            ? (tasks.value.find(t => t.id === runningTaskId.value) || null) : null);
+        const activeTimerDisplay = computed(() => runningTaskId.value ? taskTimerDisplay(runningTaskId.value) : '0:00');
+
+        const startTaskTimer = async (task) => {
+            try { await apiFetch(`/api/tasks/${task.id}/timer/start`, { method: 'POST' }); await fetchTimers(); }
+            catch (e) { console.error('start timer', e); }
+        };
+        const pauseTaskTimer = async (task) => {
+            try { await apiFetch(`/api/tasks/${task.id}/timer/pause`, { method: 'POST' }); await fetchTimers(); }
+            catch (e) { console.error('pause timer', e); }
+        };
+        const resetTaskTimer = async (task) => {
+            if (!confirm(`Reset the timer for "${task.client_name} · ${task.service_name}"? The tracked time will be cleared.`)) return;
+            try {
+                const res = await apiFetch(`/api/tasks/${task.id}/timer/reset`, { method: 'POST' });
+                if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.message || 'Could not reset timer.'); return; }
+                await fetchTimers();
+            } catch (e) { console.error('reset timer', e); }
+        };
+        const logTimerToTimesheet = (task) => {
+            const s = taskElapsedSeconds(task.id);
+            tsForm.value.task_id = task.id;
+            tsForm.value.hours = Math.floor(s / 3600);
+            tsForm.value.minutes = Math.floor((s % 3600) / 60);
             tsForm.value.log_date = new Date().toISOString().split('T')[0];
-            activeTimer.value = null;
-            currentTab.value = 'timesheet';   // redirect to file the timesheet
+            currentTab.value = 'timesheet';
+        };
+        const estDisplay = (mins) => {
+            if (!mins) return '';
+            const h = Math.floor(mins / 60), m = mins % 60;
+            return h > 0 ? `${h}h ${m}m` : `${m}m`;
         };
 
         // ===================== Completion celebration =====================
@@ -1783,6 +1839,9 @@ createApp({
         };
 
         onMounted(async () => {
+            // Live-tick running timers every second
+            timerInterval = setInterval(() => { tick.value++; }, 1000);
+
             const savedPalette = localStorage.getItem('ca_palette');
             if (savedPalette && palettes[savedPalette]) {
                 applyPalette(savedPalette);
@@ -1983,11 +2042,18 @@ createApp({
             reportSummary,
             // Client view toggle
             clientView,
-            // Active timer
-            activeTimer,
-            elapsedDisplay,
-            startTimer,
-            stopTimer,
+            // Persistent task timers
+            timers,
+            taskTimerDisplay,
+            isTaskRunning,
+            taskHasTime,
+            activeTimerTask,
+            activeTimerDisplay,
+            startTaskTimer,
+            pauseTaskTimer,
+            resetTaskTimer,
+            logTimerToTimesheet,
+            estDisplay,
             // Completion celebration
             showCompletionModal,
             completionTask,

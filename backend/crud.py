@@ -1,5 +1,6 @@
 from . import security
 import json
+import time
 from datetime import datetime
 
 def log_user_action(db, username: str, action: str, details: str):
@@ -29,7 +30,7 @@ def get_tasks_with_details(db):
                t.status, t.assigned_to, u.full_name as assigned_to_name, t.client_id, t.due_date,
                t.delegated_to, d.full_name as delegated_to_name,
                t.billing_stage, t.billed_amount, t.gst_amount, t.total_amount,
-               t.billed_date, t.received_date
+               t.billed_date, t.received_date, t.estimated_minutes
         FROM task_board t
         LEFT JOIN client_master c ON t.client_id = c.id
         LEFT JOIN service_master s ON t.service_id = s.id
@@ -177,11 +178,12 @@ def create_task(db, task_data: dict):
         
     last_id = None
     seq = next_task_no(db, task_data['financial_year'])
+    est = task_data.get('estimated_minutes') or None
     for t in tasks_to_create:
         cursor.execute('''
-            INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date, task_no)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (task_data['client_id'], task_data['service_id'], task_data['financial_year'], t['period'], task_data.get('status', 'Working'), t['assigned_to'], t['due_date'], seq))
+            INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date, task_no, estimated_minutes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (task_data['client_id'], task_data['service_id'], task_data['financial_year'], t['period'], task_data.get('status', 'Working'), t['assigned_to'], t['due_date'], seq, est))
         last_id = cursor.lastrowid
         seq += 1
 
@@ -439,10 +441,10 @@ def update_task(db, task_id: int, task_data: dict):
         assigned = None
         
     cursor.execute('''
-        UPDATE task_board 
-        SET client_id = ?, service_id = ?, financial_year = ?, period = ?, status = ?, assigned_to = ?, due_date = ?
+        UPDATE task_board
+        SET client_id = ?, service_id = ?, financial_year = ?, period = ?, status = ?, assigned_to = ?, due_date = ?, estimated_minutes = ?
         WHERE id = ?
-    ''', (task_data['client_id'], task_data['service_id'], task_data['financial_year'], task_data['period'], task_data['status'], assigned, task_data.get('due_date'), task_id))
+    ''', (task_data['client_id'], task_data['service_id'], task_data['financial_year'], task_data['period'], task_data['status'], assigned, task_data.get('due_date'), (task_data.get('estimated_minutes') or None), task_id))
     db.commit()
     return cursor.rowcount > 0
 
@@ -580,4 +582,61 @@ def set_task_billing(db, task_id: int, fields: dict):
     cursor.execute(f"UPDATE task_board SET {', '.join(sets)} WHERE id = ?", vals)
     db.commit()
     return cursor.rowcount > 0
+
+# --- Persistent task timers (one running per user) ---------------------------
+def _bank_running_for_user(cursor, user_id, now):
+    """Pause every running timer for this user, banking its elapsed seconds."""
+    cursor.execute("SELECT id, accumulated_seconds, running_since FROM task_timers "
+                   "WHERE user_id = ? AND running_since IS NOT NULL", (user_id,))
+    for row in cursor.fetchall():
+        elapsed = max(0, int(now - (row['running_since'] or now)))
+        cursor.execute("UPDATE task_timers SET accumulated_seconds = ?, running_since = NULL WHERE id = ?",
+                       ((row['accumulated_seconds'] or 0) + elapsed, row['id']))
+
+def get_user_timers(db, user_id):
+    """Current elapsed seconds + running flag for each of the user's task timers."""
+    now = time.time()
+    cursor = db.cursor()
+    cursor.execute("SELECT task_id, accumulated_seconds, running_since FROM task_timers WHERE user_id = ?", (user_id,))
+    out = []
+    for r in cursor.fetchall():
+        running = r['running_since'] is not None
+        seconds = (r['accumulated_seconds'] or 0) + (int(now - r['running_since']) if running else 0)
+        out.append({"task_id": r['task_id'], "seconds": max(0, seconds), "running": running})
+    return out
+
+def timer_start(db, task_id, user_id):
+    """Start/resume this task's timer for the user; pause any other running one."""
+    now = time.time()
+    cursor = db.cursor()
+    _bank_running_for_user(cursor, user_id, now)
+    cursor.execute("SELECT id FROM task_timers WHERE task_id = ? AND user_id = ?", (task_id, user_id))
+    row = cursor.fetchone()
+    if row:
+        cursor.execute("UPDATE task_timers SET running_since = ? WHERE id = ?", (now, row['id']))
+    else:
+        cursor.execute("INSERT INTO task_timers (task_id, user_id, accumulated_seconds, running_since) "
+                       "VALUES (?, ?, 0, ?)", (task_id, user_id, now))
+    db.commit()
+
+def timer_pause(db, task_id, user_id):
+    """Pause this task's timer for the user, banking elapsed seconds."""
+    now = time.time()
+    cursor = db.cursor()
+    cursor.execute("SELECT id, accumulated_seconds, running_since FROM task_timers "
+                   "WHERE task_id = ? AND user_id = ?", (task_id, user_id))
+    row = cursor.fetchone()
+    if row and row['running_since'] is not None:
+        elapsed = max(0, int(now - row['running_since']))
+        cursor.execute("UPDATE task_timers SET accumulated_seconds = ?, running_since = NULL WHERE id = ?",
+                       ((row['accumulated_seconds'] or 0) + elapsed, row['id']))
+        db.commit()
+    return True
+
+def timer_reset(db, task_id):
+    """Reset (clear) this task's timer for every user."""
+    cursor = db.cursor()
+    cursor.execute("DELETE FROM task_timers WHERE task_id = ?", (task_id,))
+    db.commit()
+    return True
 

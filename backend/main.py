@@ -543,6 +543,53 @@ def update_task_billing(task_id):
     db.close()
     return jsonify({"status": "success"})
 
+
+# --- Task timers (persistent, one running per user) ---------------------------
+@app.route('/api/timers', methods=['GET'])
+@login_required
+def list_timers():
+    db = get_db()
+    timers = crud.get_user_timers(db, session.get('user_id'))
+    db.close()
+    return jsonify(timers)
+
+
+@app.route('/api/tasks/<int:task_id>/timer/start', methods=['POST'])
+@login_required
+def start_timer(task_id):
+    db = get_db()
+    crud.timer_start(db, task_id, session.get('user_id'))
+    db.close()
+    return jsonify({"status": "success"})
+
+
+@app.route('/api/tasks/<int:task_id>/timer/pause', methods=['POST'])
+@login_required
+def pause_timer(task_id):
+    db = get_db()
+    crud.timer_pause(db, task_id, session.get('user_id'))
+    db.close()
+    return jsonify({"status": "success"})
+
+
+@app.route('/api/tasks/<int:task_id>/timer/reset', methods=['POST'])
+@require_perm('reset_timer')
+def reset_timer(task_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''SELECT c.name as client_name, s.name as service_name, t.period
+                      FROM task_board t
+                      LEFT JOIN client_master c ON t.client_id = c.id
+                      LEFT JOIN service_master s ON t.service_id = s.id
+                      WHERE t.id = ?''', (task_id,))
+    task = cursor.fetchone()
+    crud.timer_reset(db, task_id)
+    if task:
+        crud.log_user_action(db, current_username(), "Timer Reset",
+                             f"Reset timer for '{task['client_name']} - {task['service_name']}' ({task['period']})")
+    db.close()
+    return jsonify({"status": "success"})
+
 @app.route('/api/clients', methods=['GET'])
 @login_required
 def read_clients():

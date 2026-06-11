@@ -209,11 +209,11 @@
                             <button v-if="isAdminOrPartner" @click="openExportModal('dashboard')" class="px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
                                 <i class="fa-solid fa-file-export"></i> Export Full Report
                             </button>
-                            <div v-if="activeTimer" class="flex items-center gap-3 bg-white app-card px-4 py-2">
-                                <span class="text-[13px] text-gray-500 font-medium truncate max-w-[220px]"><i class="fa-solid fa-stopwatch text-accent mr-1.5"></i>{{ activeTimer.label }}</span>
-                                <span class="font-mono font-semibold text-gray-800 text-[15px]">{{ elapsedDisplay }}</span>
-                                <button @click="stopTimer()" class="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white transition" style="background: var(--color-stuck);">
-                                    <i class="fa-solid fa-stop text-[11px] mr-1"></i> Stop
+                            <div v-if="activeTimerTask" class="flex items-center gap-3 bg-white app-card px-4 py-2">
+                                <span class="text-[13px] text-gray-500 font-medium truncate max-w-[200px]"><i class="fa-solid fa-stopwatch text-accent mr-1.5"></i>{{ activeTimerTask.client_name }} · {{ activeTimerTask.service_name }}</span>
+                                <span class="font-mono font-semibold text-gray-800 text-[15px]">{{ activeTimerDisplay }}</span>
+                                <button @click="pauseTaskTimer(activeTimerTask)" class="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white transition" style="background: var(--color-stuck);">
+                                    <i class="fa-solid fa-pause text-[11px] mr-1"></i> Pause
                                 </button>
                             </div>
                             </div>
@@ -262,6 +262,7 @@
                                             <span class="font-medium"><span class="text-gray-400">#{{ task.task_no }}</span> · {{ task.financial_year }} · {{ task.period }}</span>
                                             <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
                                         </div>
+                                        <div v-if="task.estimated_minutes" class="text-[12px] text-gray-400 inline-flex items-center gap-1"><i class="fa-regular fa-hourglass-half"></i>Est {{ estDisplay(task.estimated_minutes) }}</div>
                                         <div class="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
                                             <span class="text-[12.5px] text-gray-500 inline-flex items-center gap-1.5 truncate">
                                                 <i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}<template v-if="task.delegated_to_name"> <i class="fa-solid fa-arrow-right-long text-gray-300 mx-0.5"></i> {{ task.delegated_to_name }}</template>
@@ -271,12 +272,15 @@
                                                 <i class="fa-solid fa-file-invoice-dollar text-[10px]"></i> Billed
                                             </button>
                                             <template v-else-if="col.key !== 'Completed'">
-                                                <button v-if="!activeTimer || activeTimer.taskId !== task.id" @click="startTimer(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-gray-600 hover:text-white hover:bg-accent transition inline-flex items-center gap-1.5 border border-gray-200 shrink-0">
-                                                    <i class="fa-solid fa-play text-[10px]"></i> Start
-                                                </button>
-                                                <button v-else @click="stopTimer()" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-white inline-flex items-center gap-1.5 shrink-0" style="background: var(--color-stuck);">
-                                                    <i class="fa-solid fa-stop text-[10px]"></i> {{ elapsedDisplay }}
-                                                </button>
+                                                <div class="flex items-center gap-1 shrink-0">
+                                                    <button v-if="can('reset_timer') && taskHasTime(task.id)" @click="resetTaskTimer(task)" class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition" title="Reset timer"><i class="fa-solid fa-rotate-left text-[11px]"></i></button>
+                                                    <button v-if="!isTaskRunning(task.id)" @click="startTaskTimer(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-gray-600 hover:text-white hover:bg-accent transition inline-flex items-center gap-1.5 border border-gray-200" :title="taskHasTime(task.id) ? 'Resume timer' : 'Start timer'">
+                                                        <i class="fa-solid fa-play text-[10px]"></i> <span>{{ taskHasTime(task.id) ? taskTimerDisplay(task.id) : 'Start' }}</span>
+                                                    </button>
+                                                    <button v-else @click="pauseTaskTimer(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-white inline-flex items-center gap-1.5" style="background: var(--color-stuck);" title="Pause timer">
+                                                        <i class="fa-solid fa-pause text-[10px]"></i> {{ taskTimerDisplay(task.id) }}
+                                                    </button>
+                                                </div>
                                             </template>
                                         </div>
                                     </div>
@@ -376,6 +380,10 @@
                                 <div class="flex items-center justify-between text-[13.5px] text-gray-500">
                                     <span class="font-medium"><span class="text-gray-400">#{{ task.task_no }}</span> · {{ task.financial_year }} · {{ task.period }}</span>
                                     <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
+                                </div>
+                                <div v-if="task.estimated_minutes || taskHasTime(task.id)" class="flex items-center gap-3 text-[12.5px] text-gray-400">
+                                    <span v-if="task.estimated_minutes"><i class="fa-regular fa-hourglass-half mr-1"></i>Est {{ estDisplay(task.estimated_minutes) }}</span>
+                                    <span v-if="taskHasTime(task.id)" class="font-mono"><i class="fa-regular fa-clock mr-1"></i>{{ taskTimerDisplay(task.id) }} logged</span>
                                 </div>
 
                                 <div class="pt-3 border-t border-gray-100 space-y-2.5">
@@ -1061,6 +1069,21 @@
                         <div v-if="editingTaskId || taskForm.recurrence_type === 'one_time'">
                             <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Due Date</label>
                             <input v-model="taskForm.due_date" type="date" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-sans">
+                        </div>
+
+                        <!-- Estimated time to complete (budget) -->
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Estimated Time to Complete <span class="font-medium normal-case text-gray-400">(optional)</span></label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="flex items-center gap-2">
+                                    <input v-model.number="taskForm.est_hours" type="number" min="0" max="999" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono text-center">
+                                    <span class="text-xs text-gray-400">hrs</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <input v-model.number="taskForm.est_minutes" type="number" min="0" max="59" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono text-center">
+                                    <span class="text-xs text-gray-400">min</span>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Recurring Info Helper -->

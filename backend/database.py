@@ -206,6 +206,27 @@ def init_db():
             counters[fy] = counters.get(fy, 0) + 1
             cursor.execute("UPDATE task_board SET task_no = ? WHERE id = ?", (counters[fy], row[0]))
 
+    # Auto-migration: estimated time budget (minutes) per task
+    cursor.execute("PRAGMA table_info(task_board)")
+    tb_cols6 = [row[1] for row in cursor.fetchall()]
+    if 'estimated_minutes' not in tb_cols6:
+        cursor.execute("ALTER TABLE task_board ADD COLUMN estimated_minutes INTEGER")
+
+    # Auto-migration: persistent per-(task,user) timers. Only one row per user may
+    # be 'running' (running_since not NULL) at a time; pausing banks the elapsed
+    # seconds into accumulated_seconds so it resumes from where it left off.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS task_timers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        accumulated_seconds INTEGER DEFAULT 0,
+        running_since REAL,
+        UNIQUE(task_id, user_id),
+        FOREIGN KEY (task_id) REFERENCES task_board (id)
+    )
+    ''')
+
     conn.commit()
     conn.close()
 

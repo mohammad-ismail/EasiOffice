@@ -5,7 +5,8 @@
       "name": "easisolution",
       "runtimeExecutable": "C:\\Users\\Tanmay\\Downloads\\Office-Managment-software\\Office-Managment-software\\.venv\\Scripts\\python.exe",
       "runtimeArgs": ["-m", "backend.main"],
-      "port": 8000
+      "port": 8000,
+      "autoPort": true
     }
   ]
 }

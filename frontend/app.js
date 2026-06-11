@@ -346,6 +346,22 @@ createApp({
             return { goingOn, stuck, completed, unassigned };
         });
 
+        // ===================== New Dashboard: summary cards -> tasks by user =====================
+        const dashCard = ref(null);   // null | 'Unassigned' | 'Pending' | 'Working' | 'Completed'
+        const setDashCard = (key) => { dashCard.value = dashCard.value === key ? null : key; };
+        const dashTasksByUser = computed(() => {
+            if (!dashCard.value) return [];
+            let list;
+            if (dashCard.value === 'Unassigned') list = activeTasks.value.filter(t => !t.assigned_to);
+            else list = activeTasks.value.filter(t => t.assigned_to && t.status === dashCard.value);
+            const map = {};
+            list.forEach(t => {
+                const name = t.assigned_to_name || 'Unassigned';
+                (map[name] = map[name] || []).push(t);
+            });
+            return Object.entries(map).map(([name, tasks]) => ({ name, tasks })).sort((a, b) => b.tasks.length - a.tasks.length);
+        });
+
         // Computed Filters for Dashboard strictly reflecting active card selection
         const filteredDashboardTasks = computed(() => {
             let list = activeTasks.value;
@@ -370,12 +386,14 @@ createApp({
 
         const boardColumns = computed(() => {
             const showUnassigned = canSeeAll.value || can('assign_task');
+            const q = taskSearch.value.trim().toLowerCase();
             let list = activeTasks.value;
+            if (q) list = list.filter(t => (t.client_name || '').toLowerCase().includes(q) || (t.service_name || '').toLowerCase().includes(q));
 
             const cols = [];
             if (showUnassigned) cols.push({ key: 'Unassigned', label: 'Unassigned', icon: 'fa-user-slash', accent: '#8E8E93' });
-            cols.push({ key: 'Working', label: 'Working', icon: 'fa-bolt', accent: 'var(--color-goingon)' });
             cols.push({ key: 'Pending', label: 'Pending', icon: 'fa-clock', accent: 'var(--color-stuck)' });
+            cols.push({ key: 'Working', label: 'Working', icon: 'fa-bolt', accent: 'var(--color-goingon)' });
             cols.push({ key: 'Completed', label: 'Completed', icon: 'fa-circle-check', accent: 'var(--color-completed)' });
             cols.forEach(c => c.tasks = []);
 
@@ -1504,8 +1522,12 @@ createApp({
         const activeTimerDisplay = computed(() => runningTaskId.value ? taskTimerDisplay(runningTaskId.value) : '0:00');
 
         const startTaskTimer = async (task) => {
-            try { await apiFetch(`/api/tasks/${task.id}/timer/start`, { method: 'POST' }); await fetchTimers(); }
-            catch (e) { console.error('start timer', e); }
+            try {
+                await apiFetch(`/api/tasks/${task.id}/timer/start`, { method: 'POST' });
+                // Starting work on a Pending task moves it to Working (stays there until Completed).
+                if (task.status === 'Pending') { await updateTaskStatus(task.id, 'Working'); task.status = 'Working'; }
+                await fetchTimers();
+            } catch (e) { console.error('start timer', e); }
         };
         const pauseTaskTimer = async (task) => {
             try { await apiFetch(`/api/tasks/${task.id}/timer/pause`, { method: 'POST' }); await fetchTimers(); }
@@ -2043,6 +2065,9 @@ createApp({
             activeDashboardFilter,
             setDashboardFilter,
             filteredDashboardTasks,
+            dashCard,
+            setDashCard,
+            dashTasksByUser,
             // Kanban board + drag & drop
             boardColumns,
             columnKeyOf,

@@ -199,27 +199,135 @@
                 <div class="flex-1 overflow-y-auto bg-gray-50/50">
                     
                     <!-- 1. DASHBOARD TAB — Kanban Board -->
-                    <main v-if="currentTab === 'dashboard'" class="p-7 h-full flex flex-col">
-                        <!-- Board intro + active timer -->
-                        <div class="flex items-center justify-between mb-5 shrink-0 gap-3">
-                            <p class="text-[15px] text-gray-500">
-                                {{ can('assign_task') ? 'Drag cards across columns to assign or update status.' : 'Drag your tasks across columns to update their status.' }}
-                            </p>
-                            <div class="flex items-center gap-3">
-                            <button v-if="isAdminOrPartner" @click="openExportModal('dashboard')" class="px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                    <main v-if="currentTab === 'dashboard'" class="p-7 space-y-6 max-w-7xl mx-auto">
+                        <!-- Active timer banner + export -->
+                        <div class="flex flex-wrap items-center gap-3">
+                            <div v-if="activeTimerTask" class="flex items-center gap-3 bg-white app-card px-4 py-2.5">
+                                <span class="text-[13px] text-gray-500 font-medium truncate max-w-[260px]"><i class="fa-solid fa-stopwatch text-accent mr-1.5"></i>Timing: {{ activeTimerTask.client_name }} · {{ activeTimerTask.service_name }}</span>
+                                <span class="font-mono font-semibold text-gray-800 text-[15px]">{{ activeTimerDisplay }}</span>
+                                <button @click="pauseTaskTimer(activeTimerTask)" class="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white transition" style="background: var(--color-stuck);"><i class="fa-solid fa-pause text-[11px] mr-1"></i> Pause</button>
+                            </div>
+                            <button v-if="isAdminOrPartner" @click="openExportModal('dashboard')" class="ml-auto px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
                                 <i class="fa-solid fa-file-export"></i> Export Full Report
                             </button>
-                            <div v-if="activeTimerTask" class="flex items-center gap-3 bg-white app-card px-4 py-2">
-                                <span class="text-[13px] text-gray-500 font-medium truncate max-w-[200px]"><i class="fa-solid fa-stopwatch text-accent mr-1.5"></i>{{ activeTimerTask.client_name }} · {{ activeTimerTask.service_name }}</span>
-                                <span class="font-mono font-semibold text-gray-800 text-[15px]">{{ activeTimerDisplay }}</span>
-                                <button @click="pauseTaskTimer(activeTimerTask)" class="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white transition" style="background: var(--color-stuck);">
-                                    <i class="fa-solid fa-pause text-[11px] mr-1"></i> Pause
-                                </button>
+                        </div>
+
+                        <!-- Summary count cards -->
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                            <button @click="setDashCard('Unassigned')" class="app-card p-5 text-left rail-unassigned transition" :class="dashCard==='Unassigned' ? 'ring-2 ring-gray-800' : 'hover:shadow-md'">
+                                <div class="text-[12px] text-gray-400 font-semibold uppercase tracking-wide">Unassigned</div>
+                                <div class="text-4xl font-semibold text-gray-800 mt-1">{{ counts.unassigned }}</div>
+                            </button>
+                            <button @click="setDashCard('Pending')" class="app-card p-5 text-left rail-pending transition" :class="dashCard==='Pending' ? 'ring-2 ring-gray-800' : 'hover:shadow-md'">
+                                <div class="text-[12px] text-gray-400 font-semibold uppercase tracking-wide">Pending</div>
+                                <div class="text-4xl font-semibold text-gray-800 mt-1">{{ counts.stuck }}</div>
+                            </button>
+                            <button @click="setDashCard('Working')" class="app-card p-5 text-left rail-working transition" :class="dashCard==='Working' ? 'ring-2 ring-gray-800' : 'hover:shadow-md'">
+                                <div class="text-[12px] text-gray-400 font-semibold uppercase tracking-wide">Working</div>
+                                <div class="text-4xl font-semibold text-gray-800 mt-1">{{ counts.goingOn }}</div>
+                            </button>
+                            <button @click="setDashCard('Completed')" class="app-card p-5 text-left rail-completed transition" :class="dashCard==='Completed' ? 'ring-2 ring-gray-800' : 'hover:shadow-md'">
+                                <div class="text-[12px] text-gray-400 font-semibold uppercase tracking-wide">Completed</div>
+                                <div class="text-4xl font-semibold text-gray-800 mt-1">{{ counts.completed }}</div>
+                            </button>
+                        </div>
+
+                        <!-- Selected card: tasks grouped by staff -->
+                        <div v-if="dashCard" class="app-card p-5 animate-fade-in">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-[16px] font-semibold text-gray-800">{{ dashCard }} tasks — by staff</h3>
+                                <button @click="setDashCard(dashCard)" class="text-gray-400 hover:text-gray-700 text-sm"><i class="fa-solid fa-xmark mr-1"></i>Close</button>
                             </div>
+                            <div v-if="dashTasksByUser.length" class="space-y-4">
+                                <div v-for="grp in dashTasksByUser" :key="grp.name">
+                                    <div class="flex items-center gap-2 mb-1.5">
+                                        <span class="w-7 h-7 rounded-full bg-accent-light text-accent text-[12px] font-bold flex items-center justify-center uppercase">{{ grp.name[0] }}</span>
+                                        <span class="font-semibold text-[14px] text-gray-800">{{ grp.name }}</span>
+                                        <span class="text-[12px] text-gray-400">{{ grp.tasks.length }} task{{ grp.tasks.length===1?'':'s' }}</span>
+                                    </div>
+                                    <div class="pl-9 divide-y divide-gray-50">
+                                        <div v-for="t in grp.tasks" :key="t.id" class="flex items-center justify-between gap-3 py-1.5 text-[13.5px]">
+                                            <span class="text-gray-700 truncate"><span class="text-gray-400">{{ taskSerial(t) }}</span> · {{ t.client_name }} · {{ t.service_name }} <span class="text-gray-400">({{ t.period }})</span></span>
+                                            <span class="font-mono text-gray-400 text-[12.5px] whitespace-nowrap"><i class="fa-regular fa-calendar mr-1"></i>{{ t.due_date || '—' }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-else class="text-[13px] text-gray-400 italic py-6 text-center">No {{ dashCard.toLowerCase() }} tasks.</div>
+                        </div>
+                        <div v-else class="text-center py-10 text-gray-400 text-[14px]"><i class="fa-regular fa-hand-pointer mr-1.5"></i>Click a card above to see those tasks grouped by staff member.</div>
+                    </main>
+
+                    <!-- 2. TASKS TAB -->
+                    <main v-if="currentTab === 'tasks'" class="p-6 flex flex-col h-full overflow-hidden">
+                        <!-- Task Bar Header -->
+                        <div class="flex flex-col md:flex-row gap-3 items-center justify-between bg-white p-4 rounded-2xl border border-gray-150 shadow-sm shrink-0 mb-4">
+                            <!-- Search + active timer -->
+                            <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                                <div class="relative w-full sm:w-72">
+                                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                    <input v-model="taskSearch" type="text" placeholder="Search tasks by Client/Service..." class="pl-10 pr-4 py-2 w-full text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+                                </div>
+                                <div v-if="activeTimerTask" class="hidden lg:flex items-center gap-2 text-[13px] text-gray-500">
+                                    <i class="fa-solid fa-stopwatch text-accent"></i><span class="font-mono font-semibold text-gray-800">{{ activeTimerDisplay }}</span>
+                                    <button @click="pauseTaskTimer(activeTimerTask)" class="px-2 py-1 rounded-lg text-[12px] font-semibold text-white" style="background: var(--color-stuck);"><i class="fa-solid fa-pause text-[10px] mr-1"></i>Pause</button>
+                                </div>
+                            </div>
+                            
+                            <!-- Action Buttons: create client / single task rights conditionally visible to Admin only -->
+                            <div class="flex items-center gap-2 w-full md:w-auto justify-end">
+                                <button @click="openExportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-file-export"></i> Export
+                                </button>
+                                <button v-if="can('create_task')" @click="openImportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-file-import"></i> Bulk Upload
+                                </button>
+                                <button v-if="can('create_task')" @click="showBulkEngine = !showBulkEngine" class="px-4 py-2 text-sm font-semibold border border-primary text-primary hover:bg-blue-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-bolt"></i> Bulk Engine
+                                </button>
+                                <button v-if="can('create_task')" @click="showTaskModal = true" class="px-4 py-2 text-sm font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-plus"></i> Create Task
+                                </button>
                             </div>
                         </div>
 
-                        <!-- Kanban Columns -->
+                        <!-- Collapsible Bulk Engine Panel -->
+                        <div v-if="showBulkEngine && can('create_task')" class="bg-gray-900 text-white rounded-2xl shadow-lg p-6 border border-gray-800 relative overflow-hidden transition-all duration-300 shrink-0 mb-4">
+                            <div class="relative z-10 max-w-2xl">
+                                <h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-bolt text-white"></i> Generate Bulk Tasks</h3>
+                                <p class="text-gray-300 text-sm mt-1 mb-5">Instantly auto-generate a compliance task for all registered clients using a service template.</p>
+
+                                <form @submit.prevent="generateBulkTasks" class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Service Template</label>
+                                        <select v-model="bulkForm.service_id" required class="w-full rounded-xl border-none bg-white/10 p-2.5 text-sm text-white focus:ring-2 focus:ring-white/40">
+                                            <option disabled value="">Select a service...</option>
+                                            <option v-for="srv in services" :key="srv.id" :value="srv.id">{{ srv.name }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Financial Year</label>
+                                        <input v-model="bulkForm.financial_year" type="text" placeholder="e.g. 2025-26" required pattern="20[0-9]{2}-[0-9]{2}" title="Financial Year must match format YYYY-YY (e.g. 2025-26)" class="w-full rounded-xl border-none bg-white/10 p-2.5 text-sm text-white focus:ring-2 focus:ring-white/40">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Period / Month</label>
+                                        <input v-model="bulkForm.period" type="text" placeholder="e.g. May" required class="w-full rounded-xl border-none bg-white/10 p-2.5 text-sm text-white focus:ring-2 focus:ring-white/40">
+                                    </div>
+                                    <div class="sm:col-span-3 flex justify-end gap-2 mt-2">
+                                        <button type="button" @click="showBulkEngine = false" class="px-4 py-2 text-xs font-bold text-gray-300 hover:text-white transition">Cancel</button>
+                                        <button type="submit" class="bg-white hover:bg-gray-200 text-gray-900 font-bold py-2 px-5 rounded-xl text-xs shadow-md transition duration-200">
+                                            Generate Active Tasks
+                                        </button>
+                                    </div>
+                                </form>
+                                
+                                <div v-if="bulkMessage" class="mt-4 p-3 bg-green-500/20 border border-green-500/30 text-green-300 rounded-xl text-xs flex items-center">
+                                    <i class="fa-solid fa-circle-check mr-2 text-green-400"></i> {{ bulkMessage }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Kanban Board (Unassigned · Pending · Working · Completed) -->
                         <div class="flex gap-4 flex-1 min-h-0 overflow-x-auto pb-2">
                             <div v-for="col in boardColumns" :key="col.key"
                                  class="kanban-col flex flex-col flex-1 min-w-[270px]"
@@ -263,6 +371,20 @@
                                             <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
                                         </div>
                                         <div v-if="task.estimated_minutes" class="text-[12px] text-gray-400 inline-flex items-center gap-1"><i class="fa-regular fa-hourglass-half"></i>Est {{ estDisplay(task.estimated_minutes) }}</div>
+                                        <!-- Admin/assigner inline controls -->
+                                        <div v-if="can('assign_task')" class="mt-2 flex items-center gap-1.5">
+                                            <select v-model="task.assigned_to" @change="assignTask(task, task.assigned_to)" title="Assign" class="flex-1 min-w-0 rounded-lg border border-gray-200 px-2 py-1 text-[12.5px] bg-white cursor-pointer">
+                                                <option :value="null">— Unassigned —</option>
+                                                <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+                                            </select>
+                                        </div>
+                                        <div v-if="can('delegate_task') && task.assigned_to === currentUser.id" class="mt-1.5 flex items-center gap-1.5">
+                                            <span class="text-[11px] text-gray-400 shrink-0">Delegate</span>
+                                            <select v-model="task.delegated_to" @change="delegateTask(task, task.delegated_to)" class="flex-1 min-w-0 rounded-lg border border-gray-200 px-2 py-1 text-[12.5px] bg-white cursor-pointer">
+                                                <option :value="null">— None —</option>
+                                                <option v-for="u in usersList.filter(x => x.role === 'Employee')" :key="u.id" :value="u.id">{{ u.full_name }}</option>
+                                            </select>
+                                        </div>
                                         <div class="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
                                             <span class="text-[12.5px] text-gray-500 inline-flex items-center gap-1.5 truncate">
                                                 <i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}<template v-if="task.delegated_to_name"> <i class="fa-solid fa-arrow-right-long text-gray-300 mx-0.5"></i> {{ task.delegated_to_name }}</template>
@@ -290,142 +412,6 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </main>
-
-                    <!-- 2. TASKS TAB -->
-                    <main v-if="currentTab === 'tasks'" class="p-8 space-y-6 max-w-7xl mx-auto">
-                        <!-- Task Bar Header -->
-                        <div class="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-5 rounded-2xl border border-gray-150 shadow-sm">
-                            <!-- Filters -->
-                            <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                                <div class="relative w-full sm:w-64">
-                                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                                    <input v-model="taskSearch" type="text" placeholder="Search tasks by Client/Service..." class="pl-10 pr-4 py-2 w-full text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
-                                </div>
-                                <select v-model="taskStatusFilter" class="px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary bg-white">
-                                    <option value="All">All Statuses</option>
-                                    <option value="Working">Working</option>
-                                    <option value="Pending">Pending</option>
-                                    <option value="Completed">Completed</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Action Buttons: create client / single task rights conditionally visible to Admin only -->
-                            <div class="flex items-center gap-2 w-full md:w-auto justify-end">
-                                <button @click="openExportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
-                                    <i class="fa-solid fa-file-export"></i> Export
-                                </button>
-                                <button v-if="can('create_task')" @click="openImportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl transition flex items-center gap-1.5 shadow-sm">
-                                    <i class="fa-solid fa-file-import"></i> Bulk Upload
-                                </button>
-                                <button v-if="can('create_task')" @click="showBulkEngine = !showBulkEngine" class="px-4 py-2 text-sm font-semibold border border-primary text-primary hover:bg-blue-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
-                                    <i class="fa-solid fa-bolt"></i> Bulk Engine
-                                </button>
-                                <button v-if="can('create_task')" @click="showTaskModal = true" class="px-4 py-2 text-sm font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center gap-1.5 shadow-sm">
-                                    <i class="fa-solid fa-plus"></i> Create Task
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Collapsible Bulk Engine Panel -->
-                        <div v-if="showBulkEngine && can('create_task')" class="bg-gray-900 text-white rounded-2xl shadow-lg p-6 border border-gray-800 relative overflow-hidden transition-all duration-300">
-                            <div class="relative z-10 max-w-2xl">
-                                <h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-bolt text-white"></i> Generate Bulk Tasks</h3>
-                                <p class="text-gray-300 text-sm mt-1 mb-5">Instantly auto-generate a compliance task for all registered clients using a service template.</p>
-
-                                <form @submit.prevent="generateBulkTasks" class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
-                                    <div>
-                                        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Service Template</label>
-                                        <select v-model="bulkForm.service_id" required class="w-full rounded-xl border-none bg-white/10 p-2.5 text-sm text-white focus:ring-2 focus:ring-white/40">
-                                            <option disabled value="">Select a service...</option>
-                                            <option v-for="srv in services" :key="srv.id" :value="srv.id">{{ srv.name }}</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Financial Year</label>
-                                        <input v-model="bulkForm.financial_year" type="text" placeholder="e.g. 2025-26" required pattern="20[0-9]{2}-[0-9]{2}" title="Financial Year must match format YYYY-YY (e.g. 2025-26)" class="w-full rounded-xl border-none bg-white/10 p-2.5 text-sm text-white focus:ring-2 focus:ring-white/40">
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Period / Month</label>
-                                        <input v-model="bulkForm.period" type="text" placeholder="e.g. May" required class="w-full rounded-xl border-none bg-white/10 p-2.5 text-sm text-white focus:ring-2 focus:ring-white/40">
-                                    </div>
-                                    <div class="sm:col-span-3 flex justify-end gap-2 mt-2">
-                                        <button type="button" @click="showBulkEngine = false" class="px-4 py-2 text-xs font-bold text-gray-300 hover:text-white transition">Cancel</button>
-                                        <button type="submit" class="bg-white hover:bg-gray-200 text-gray-900 font-bold py-2 px-5 rounded-xl text-xs shadow-md transition duration-200">
-                                            Generate Active Tasks
-                                        </button>
-                                    </div>
-                                </form>
-                                
-                                <div v-if="bulkMessage" class="mt-4 p-3 bg-green-500/20 border border-green-500/30 text-green-300 rounded-xl text-xs flex items-center">
-                                    <i class="fa-solid fa-circle-check mr-2 text-green-400"></i> {{ bulkMessage }}
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tasks Card Grid -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
-                            <div v-for="task in filteredTasks" :key="task.id" class="app-card p-3.5 flex flex-col gap-2.5"
-                                 :class="'rail-' + columnKeyOf(task).toLowerCase()">
-                                <div class="flex items-start justify-between gap-2">
-                                    <div class="min-w-0">
-                                        <div class="font-semibold text-[16px] text-gray-800 leading-snug truncate">{{ task.client_name }}</div>
-                                        <div class="mt-1.5 inline-flex items-center bg-gray-100 text-gray-600 px-2.5 py-1 rounded-md text-[13px] font-medium">{{ task.service_name }}</div>
-                                    </div>
-                                    <span v-if="task.assigned_to" class="pill shrink-0" :class="{'pill-working':task.status==='Working','pill-pending':task.status==='Pending','pill-completed':task.status==='Completed'}">{{ task.status }}</span>
-                                    <span v-else class="pill pill-unassigned shrink-0">Unassigned</span>
-                                </div>
-
-                                <div class="flex items-center justify-between text-[13.5px] text-gray-500">
-                                    <span class="font-medium"><span class="text-gray-400">{{ taskSerial(task) }}</span> · {{ task.period }}</span>
-                                    <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
-                                </div>
-                                <div v-if="task.estimated_minutes || taskHasTime(task.id)" class="flex items-center gap-3 text-[12.5px] text-gray-400">
-                                    <span v-if="task.estimated_minutes"><i class="fa-regular fa-hourglass-half mr-1"></i>Est {{ estDisplay(task.estimated_minutes) }}</span>
-                                    <span v-if="taskHasTime(task.id)" class="font-mono"><i class="fa-regular fa-clock mr-1"></i>{{ taskTimerDisplay(task.id) }} logged</span>
-                                </div>
-
-                                <div class="pt-3 border-t border-gray-100 space-y-2.5">
-                                    <span class="text-[12px] font-semibold text-gray-400 uppercase tracking-wide block">Assigned Staff</span>
-                                    <!-- Can assign: assign + status + edit/delete -->
-                                    <div v-if="can('assign_task')" class="flex items-center gap-2">
-                                        <select v-model="task.assigned_to" @change="assignTask(task, task.assigned_to)" title="Assign this task to a staff member" class="flex-1 min-w-0 rounded-lg border border-gray-200 px-2.5 py-2 text-[14px] bg-white focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer">
-                                            <option :value="null">— Unassigned —</option>
-                                            <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.full_name }}</option>
-                                        </select>
-                                        <select v-model="task.status" @change="updateTaskStatus(task.id, task.status)" title="Change status" class="rounded-lg border border-gray-200 px-2.5 py-2 text-[14px] bg-white focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer">
-                                            <option value="Working">Working</option>
-                                            <option value="Pending">Pending</option>
-                                            <option value="Completed">Completed</option>
-                                        </select>
-                                        <button v-if="can('create_task')" @click="startEditTask(task)" class="p-2 rounded-lg text-gray-400 hover:text-accent hover:bg-accent-light transition shrink-0" title="Edit task"><i class="fa-solid fa-pen text-[13px]"></i></button>
-                                        <button v-if="can('delete_task')" @click="deleteTask(task)" class="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition shrink-0" title="Delete task"><i class="fa-solid fa-trash-can text-[13px]"></i></button>
-                                    </div>
-                                    <!-- Otherwise: assignee text + own status -->
-                                    <div v-else class="flex items-center justify-between gap-2">
-                                        <span class="text-[14px] text-gray-600 inline-flex items-center gap-1.5 truncate"><i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}</span>
-                                        <select v-model="task.status" @change="updateTaskStatus(task.id, task.status)" class="rounded-lg border border-gray-200 px-2.5 py-2 text-[14px] bg-white focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer shrink-0">
-                                            <option value="Working">Working</option>
-                                            <option value="Pending">Pending</option>
-                                            <option value="Completed">Completed</option>
-                                        </select>
-                                    </div>
-                                    <!-- Delegation: a Manager passing a task assigned to them down to an Employee -->
-                                    <div v-if="can('delegate_task') && task.assigned_to === currentUser.id" class="flex items-center gap-2">
-                                        <span class="text-[12px] text-gray-400 shrink-0">Delegate to</span>
-                                        <select v-model="task.delegated_to" @change="delegateTask(task, task.delegated_to)" class="flex-1 min-w-0 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13.5px] bg-white cursor-pointer">
-                                            <option :value="null">— None —</option>
-                                            <option v-for="u in usersList.filter(x => x.role === 'Employee')" :key="u.id" :value="u.id">{{ u.full_name }}</option>
-                                        </select>
-                                    </div>
-                                    <!-- Delegated indicator (shown to everyone who can see the card) -->
-                                    <div v-if="task.delegated_to_name" class="text-[12.5px] text-gray-500">
-                                        <i class="fa-solid fa-arrow-right-long text-gray-300 mr-1"></i>Delegated to <span class="font-semibold text-gray-700">{{ task.delegated_to_name }}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div v-if="filteredTasks.length === 0" class="col-span-full text-center py-14 text-gray-400 italic app-card">No tasks found matching filters.</div>
                         </div>
                     </main>
 

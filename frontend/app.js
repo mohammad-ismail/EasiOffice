@@ -735,6 +735,28 @@ createApp({
             }
         };
 
+        // ===================== Recurring templates =====================
+        const showRecurringModal = ref(false);
+        const recurringTemplates = ref([]);
+        const fetchRecurringTemplates = async () => {
+            try {
+                const res = await apiFetch('/api/recurring');
+                if (res.ok) recurringTemplates.value = await res.json();
+            } catch (e) { console.error('fetch recurring', e); }
+        };
+        const openRecurringModal = async () => { await fetchRecurringTemplates(); showRecurringModal.value = true; };
+        const closeRecurringModal = () => { showRecurringModal.value = false; };
+        const updateRecurringTpl = async (tpl, fields) => {
+            try {
+                const res = await apiFetch(`/api/recurring/${tpl.id}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields)
+                });
+                if (res.ok) { await fetchRecurringTemplates(); await fetchData(); }
+                else { const e = await res.json().catch(() => ({})); alert(e.message || 'Could not update template.'); }
+            } catch (e) { console.error('update recurring', e); }
+        };
+        const freqLabel = (f) => ({ monthly: 'Monthly', quarterly: 'Quarterly', six_monthly: 'Six-monthly', annual: 'Annual' }[f] || f);
+
         // Delegate a task (Manager -> Employee). assigned_to stays the Manager.
         const delegateTask = async (task, userId) => {
             try {
@@ -2117,6 +2139,12 @@ createApp({
             closeTaskModal,
             submitTaskForm,
             generateBulkTasks,
+            showRecurringModal,
+            recurringTemplates,
+            openRecurringModal,
+            closeRecurringModal,
+            updateRecurringTpl,
+            freqLabel,
             startEditClient,
             closeClientModal,
             submitClientForm,

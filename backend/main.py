@@ -45,7 +45,25 @@ if os.environ.get('TRUST_PROXY', 'false').lower() == 'true':
 # Seed data
 db = get_db()
 seed_data(db)
+crud.generate_due_recurring(db)   # catch up any recurring tasks due on startup
 db.close()
+
+
+# Recurring catch-up runs at most once per calendar day (first task fetch of the day),
+# so recurring instances appear even if the app wasn't running on the generation date.
+_last_recurring_date = None
+
+
+def _maybe_generate_recurring(db):
+    global _last_recurring_date
+    today = datetime.now().strftime('%Y-%m-%d')
+    if _last_recurring_date == today:
+        return
+    _last_recurring_date = today
+    try:
+        crud.generate_due_recurring(db)
+    except Exception as e:
+        print(f"[recurring] catch-up error: {e}")
 
 
 # --- Authentication / Authorization -------------------------------------------
@@ -320,9 +338,41 @@ def clear_activity_logs():
 @login_required
 def read_tasks():
     db = get_db()
+    _maybe_generate_recurring(db)
     tasks = crud.get_tasks_with_details(db)
     db.close()
     return jsonify(tasks)
+
+
+@app.route('/api/recurring', methods=['GET'])
+@require_perm('create_task')
+def list_recurring():
+    db = get_db()
+    rows = crud.get_recurring_templates(db)
+    db.close()
+    return jsonify(rows)
+
+
+@app.route('/api/recurring/<int:tpl_id>', methods=['PUT'])
+@require_perm('create_task')
+def update_recurring(tpl_id):
+    data = get_body()
+    fields = {}
+    if 'assigned_to' in data:
+        fields['assigned_to'] = data.get('assigned_to') or None
+    if 'estimated_minutes' in data:
+        fields['estimated_minutes'] = data.get('estimated_minutes') or None
+    if 'active' in data:
+        fields['active'] = 1 if data.get('active') else 0
+    db = get_db()
+    ok = crud.update_recurring_template(db, tpl_id, fields)
+    if ok:
+        crud.log_user_action(db, current_username(), "Recurring Template Updated",
+                             f"Updated recurring template (ID {tpl_id})")
+    db.close()
+    if not ok:
+        abort(404, description="Recurring template not found")
+    return jsonify({"status": "success"})
 
 @app.route('/api/tasks/bulk', methods=['POST'])
 @require_perm('create_task')

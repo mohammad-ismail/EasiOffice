@@ -83,112 +83,132 @@ def get_services(db):
     cursor.execute('SELECT id, name, description, checklist_json, default_due_day FROM service_master')
     return [dict(row) for row in cursor.fetchall()]
 
-def create_task(db, task_data: dict):
-    cursor = db.cursor()
-    
-    # Retrieve default due day for the service
-    cursor.execute('SELECT default_due_day FROM service_master WHERE id = ?', (task_data['service_id'],))
-    srv_row = cursor.fetchone()
-    default_due_day = srv_row['default_due_day'] if (srv_row and srv_row['default_due_day'] is not None) else 15
-    
-    recurrence_type = task_data.get('recurrence_type', 'one_time')
-    
-    def get_due_date_for_month(fy: str, month_name: str, day: int):
-        try:
-            parts = fy.split('-')
-            start_year = int(parts[0])
-        except Exception:
-            start_year = 2025
-            
-        months_map = {
-            "April": (start_year, "04"),
-            "May": (start_year, "05"),
-            "June": (start_year, "06"),
-            "July": (start_year, "07"),
-            "August": (start_year, "08"),
-            "September": (start_year, "09"),
-            "October": (start_year, "10"),
-            "November": (start_year, "11"),
-            "December": (start_year, "12"),
-            "January": (start_year + 1, "01"),
-            "February": (start_year + 1, "02"),
-            "March": (start_year + 1, "03")
-        }
-        yr, mo = months_map.get(month_name, (start_year, "05"))
-        return f"{yr}-{mo}-{day:02d}"
+# Financial-year month sequence (April start): (month_name, month_number)
+_FY_MONTHS = [("April", 4), ("May", 5), ("June", 6), ("July", 7), ("August", 8),
+              ("September", 9), ("October", 10), ("November", 11), ("December", 12),
+              ("January", 1), ("February", 2), ("March", 3)]
 
-    tasks_to_create = []
-    
-    if recurrence_type == 'monthly':
-        months = ["April", "May", "June", "July", "August", "September", "October", "November", "December", "January", "February", "March"]
-        for m in months:
-            due = get_due_date_for_month(task_data['financial_year'], m, default_due_day)
-            tasks_to_create.append({
-                "period": m,
-                "due_date": due,
-                "assigned_to": None
-            })
-    elif recurrence_type == 'quarterly':
-        quarters = [
-            ("Q1 (Apr-Jun)", "June"),
-            ("Q2 (Jul-Sep)", "September"),
-            ("Q3 (Oct-Dec)", "December"),
-            ("Q4 (Jan-Mar)", "March")
-        ]
-        for q, m in quarters:
-            due = get_due_date_for_month(task_data['financial_year'], m, default_due_day)
-            tasks_to_create.append({
-                "period": q,
-                "due_date": due,
-                "assigned_to": None
-            })
-    elif recurrence_type == 'six_monthly':
-        halves = [
-            ("H1 (Apr-Sep)", "September"),
-            ("H2 (Oct-Mar)", "March")
-        ]
-        for h, m in halves:
-            due = get_due_date_for_month(task_data['financial_year'], m, default_due_day)
-            tasks_to_create.append({
-                "period": h,
-                "due_date": due,
-                "assigned_to": None
-            })
-    elif recurrence_type == 'annual':
-        due = get_due_date_for_month(task_data['financial_year'], "March", default_due_day)
-        tasks_to_create.append({
-            "period": "Annual",
-            "due_date": due,
-            "assigned_to": None
-        })
-    else: # one_time
-        assigned = task_data.get('assigned_to')
-        if not assigned or str(assigned).strip() == "":
-            assigned = None
-        
-        due = task_data.get('due_date')
-        if not due:
-            due = get_due_date_for_month(task_data['financial_year'], "May", default_due_day)
-            
-        tasks_to_create.append({
-            "period": task_data['period'],
-            "due_date": due,
-            "assigned_to": assigned
-        })
-        
-    last_id = None
+def _recurrence_occurrences(frequency, financial_year):
+    """Occurrences a recurring template generates: list of (period_label, year, month)."""
+    try:
+        start_year = int(financial_year.split('-')[0])
+    except Exception:
+        start_year = 2025
+    yr = lambda mo: start_year if mo >= 4 else start_year + 1   # noqa: E731
+    if frequency == 'monthly':
+        return [(name, yr(mo), mo) for (name, mo) in _FY_MONTHS]
+    if frequency == 'quarterly':
+        return [("Q1 (Apr-Jun)", yr(4), 4), ("Q2 (Jul-Sep)", yr(7), 7),
+                ("Q3 (Oct-Dec)", yr(10), 10), ("Q4 (Jan-Mar)", yr(1), 1)]
+    if frequency == 'six_monthly':
+        return [("H1 (Apr-Sep)", yr(4), 4), ("H2 (Oct-Mar)", yr(10), 10)]
+    if frequency == 'annual':
+        return [("Annual", yr(4), 4)]
+    return []
+
+def _generate_for_template(db, tpl):
+    """Create any due-but-missing instances for one template (catch-up). Returns count."""
+    from datetime import date as _date
+    cursor = db.cursor()
+    today = datetime.now().date()
+    gen_day = tpl.get('gen_day') or 3
+    due_day = tpl.get('due_day') or 10
+    seq = None
+    created = 0
+    for (period, yr_, mo) in _recurrence_occurrences(tpl.get('frequency'), tpl.get('financial_year')):
+        # Only generate once the gen day of that month has arrived.
+        if today < _date(yr_, mo, min(gen_day, 28)):
+            continue
+        cursor.execute('SELECT 1 FROM task_board WHERE client_id=? AND service_id=? AND financial_year=? AND period=?',
+                       (tpl['client_id'], tpl['service_id'], tpl['financial_year'], period))
+        if cursor.fetchone():
+            continue
+        if seq is None:
+            seq = next_task_no(db, tpl['financial_year'])
+        due = _date(yr_, mo, min(due_day, 28)).isoformat()
+        cursor.execute('''INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date, task_no, estimated_minutes)
+                          VALUES (?, ?, ?, ?, 'Pending', ?, ?, ?, ?)''',
+                       (tpl['client_id'], tpl['service_id'], tpl['financial_year'], period,
+                        tpl.get('assigned_to'), due, seq, tpl.get('estimated_minutes')))
+        seq += 1
+        created += 1
+    db.commit()
+    return created
+
+def generate_due_recurring(db):
+    """Catch-up generator: create all due instances for every active template."""
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM recurring_templates WHERE active = 1")
+    total = 0
+    for r in cursor.fetchall():
+        total += _generate_for_template(db, dict(r))
+    return total
+
+def create_recurring_template(db, data):
+    """Create a recurring template and immediately generate its already-due instances."""
+    cursor = db.cursor()
+    cursor.execute('''INSERT INTO recurring_templates
+        (client_id, service_id, financial_year, frequency, assigned_to, estimated_minutes, due_day, gen_day, active, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 10, 3, 1, ?)''',
+        (data['client_id'], data['service_id'], data['financial_year'], data.get('recurrence_type'),
+         data.get('assigned_to') or None, data.get('estimated_minutes') or None,
+         datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    tpl_id = cursor.lastrowid
+    db.commit()
+    cursor.execute("SELECT * FROM recurring_templates WHERE id = ?", (tpl_id,))
+    created = _generate_for_template(db, dict(cursor.fetchone()))
+    return {"template_id": tpl_id, "created_count": created}
+
+def create_task(db, task_data: dict):
+    """Create a one-time task, or (for recurring types) a recurring template that
+    auto-generates its instances over time."""
+    recurrence_type = task_data.get('recurrence_type', 'one_time')
+    if recurrence_type in ('monthly', 'quarterly', 'six_monthly', 'annual'):
+        return create_recurring_template(db, task_data)
+
+    cursor = db.cursor()
+    assigned = task_data.get('assigned_to') or None
+    if assigned and str(assigned).strip() == "":
+        assigned = None
     seq = next_task_no(db, task_data['financial_year'])
     est = task_data.get('estimated_minutes') or None
-    for t in tasks_to_create:
-        cursor.execute('''
-            INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date, task_no, estimated_minutes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (task_data['client_id'], task_data['service_id'], task_data['financial_year'], t['period'], task_data.get('status', 'Working'), t['assigned_to'], t['due_date'], seq, est))
-        last_id = cursor.lastrowid
-        seq += 1
-
+    cursor.execute('''INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date, task_no, estimated_minutes)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                   (task_data['client_id'], task_data['service_id'], task_data['financial_year'], task_data['period'],
+                    task_data.get('status', 'Pending'), assigned, task_data.get('due_date'), seq, est))
+    last_id = cursor.lastrowid
     db.commit()
-    return {"id": last_id, "created_count": len(tasks_to_create)}
+    return {"id": last_id, "created_count": 1}
+
+# --- Recurring template management ---------------------------------------------
+def get_recurring_templates(db):
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT rt.id, rt.client_id, rt.service_id, rt.financial_year, rt.frequency,
+               rt.assigned_to, rt.estimated_minutes, rt.due_day, rt.gen_day, rt.active,
+               c.name as client_name, s.name as service_name, u.full_name as assigned_to_name
+        FROM recurring_templates rt
+        LEFT JOIN client_master c ON rt.client_id = c.id
+        LEFT JOIN service_master s ON rt.service_id = s.id
+        LEFT JOIN users u ON rt.assigned_to = u.id
+        ORDER BY rt.active DESC, rt.id DESC
+    ''')
+    return [dict(row) for row in cursor.fetchall()]
+
+def update_recurring_template(db, tpl_id, fields: dict):
+    allowed = ('assigned_to', 'estimated_minutes', 'active')
+    sets, vals = [], []
+    for k in allowed:
+        if k in fields:
+            sets.append(f"{k} = ?")
+            vals.append(fields[k])
+    if not sets:
+        return False
+    vals.append(tpl_id)
+    cursor = db.cursor()
+    cursor.execute(f"UPDATE recurring_templates SET {', '.join(sets)} WHERE id = ?", vals)
+    db.commit()
+    return cursor.rowcount > 0
 
 def get_client_groups(db):
     cursor = db.cursor()

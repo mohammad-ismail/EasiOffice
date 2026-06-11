@@ -227,6 +227,27 @@ def init_db():
     )
     ''')
 
+    # Auto-migration: recurring task templates. A template auto-generates its task
+    # instances over time (catch-up): on/after the gen_day (3rd) of each due month,
+    # with due_date on the due_day (10th), keeping the same assignee.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS recurring_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id INTEGER,
+        service_id INTEGER,
+        financial_year TEXT,
+        frequency TEXT,
+        assigned_to INTEGER,
+        estimated_minutes INTEGER,
+        due_day INTEGER DEFAULT 10,
+        gen_day INTEGER DEFAULT 3,
+        active INTEGER DEFAULT 1,
+        created_at TEXT,
+        FOREIGN KEY (client_id) REFERENCES client_master (id),
+        FOREIGN KEY (service_id) REFERENCES service_master (id)
+    )
+    ''')
+
     conn.commit()
     conn.close()
 

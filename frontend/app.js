@@ -1323,6 +1323,128 @@ createApp({
             return { today: fmt(todayMin), month: fmt(monthMin), filtered: fmt(filteredMin), entries: reportTimesheets.value.length };
         });
 
+        // ===================== Reports: flexible drill-down =====================
+        // Pick any order of the three dimensions (User / Client / Task) and a period
+        // granularity (Weekly / Monthly / Quarterly / Yearly). Built entirely from the
+        // timesheets already loaded; drill in to individual log entries at the leaf.
+        const DRILL_DIMS = [
+            { key: 'user', label: 'User' },
+            { key: 'client', label: 'Client' },
+            { key: 'task', label: 'Task' }
+        ];
+        const drillOrder = ref(['user', 'client', 'task']);
+        const drillPeriod = ref('monthly');             // weekly | monthly | quarterly | yearly
+        const _nowD = new Date();
+        const drillWeek = ref(today);                   // any date within the week
+        const drillMonth = ref(today.slice(0, 7));      // YYYY-MM
+        const drillYear = ref(String(_nowD.getFullYear()));
+        const drillQuarter = ref('Q' + (Math.floor(_nowD.getMonth() / 3) + 1));
+        const expandedNodes = ref({});
+
+        const drillDimLabel = (key) => (DRILL_DIMS.find(d => d.key === key) || {}).label || key;
+
+        // Keep the three slots distinct: choosing a value swaps it with whoever held it.
+        const setDrillDim = (slot, val) => {
+            const order = [...drillOrder.value];
+            const existing = order.indexOf(val);
+            if (existing !== -1 && existing !== slot) order[existing] = order[slot];
+            order[slot] = val;
+            drillOrder.value = order;
+        };
+
+        const dimValue = (ts, dim) => {
+            if (dim === 'user') return { key: ts.employee_name || 'Unassigned', label: ts.employee_name || 'Unassigned' };
+            if (dim === 'client') return { key: ts.client_name || 'Unspecified', label: ts.client_name || 'Unspecified' };
+            return { key: 't' + (ts.task_id || (ts.service_name + ts.period)), label: `${ts.service_name || '—'} · ${ts.period || ''}` };
+        };
+
+        const _quarterMonths = { Q1: [0, 1, 2], Q2: [3, 4, 5], Q3: [6, 7, 8], Q4: [9, 10, 11] };
+        const drillInPeriod = (d) => {
+            if (!d) return false;
+            if (drillPeriod.value === 'monthly') return d.startsWith(drillMonth.value);
+            if (drillPeriod.value === 'yearly') return d.startsWith(drillYear.value);
+            if (drillPeriod.value === 'quarterly') {
+                if (!d.startsWith(drillYear.value)) return false;
+                const mo = parseInt(d.slice(5, 7), 10) - 1;
+                return (_quarterMonths[drillQuarter.value] || []).includes(mo);
+            }
+            if (drillPeriod.value === 'weekly') {
+                const anchor = new Date(drillWeek.value + 'T00:00:00');
+                const dow = (anchor.getDay() + 6) % 7;     // Monday = 0
+                const monday = new Date(anchor); monday.setDate(anchor.getDate() - dow);
+                const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+                const ds = new Date(d + 'T00:00:00');
+                return ds >= monday && ds <= sunday;
+            }
+            return true;
+        };
+
+        const tsMinutes = (ts) => (ts.hours || 0) * 60 + (ts.minutes || 0);
+        const drillSource = computed(() => filteredTimesheets.value.filter(ts => drillInPeriod(ts.log_date)));
+        const drillTotal = computed(() => { let m = 0; drillSource.value.forEach(ts => m += tsMinutes(ts)); return fmtDur(Math.floor(m / 60), m % 60); });
+
+        // Build nested groups by the chosen order, flattened to rows that respect expand state.
+        const drillRows = computed(() => {
+            const dims = drillOrder.value;
+            const rows = [];
+            const build = (items, depth, path) => {
+                if (depth >= dims.length) {
+                    items.slice().sort((a, b) => (a.log_date < b.log_date ? 1 : -1)).forEach((ts, i) => {
+                        rows.push({ id: path + '|log' + i, depth, type: 'log',
+                            label: `${ts.log_date} — ${ts.description || 'No description'}`,
+                            sub: `${ts.client_name} · ${ts.service_name} · ${ts.employee_name}`,
+                            minutes: tsMinutes(ts), count: 1, hasChildren: false });
+                    });
+                    return;
+                }
+                const dim = dims[depth];
+                const map = new Map();
+                items.forEach(ts => {
+                    const dv = dimValue(ts, dim);
+                    if (!map.has(dv.key)) map.set(dv.key, { label: dv.label, items: [] });
+                    map.get(dv.key).items.push(ts);
+                });
+                const groups = [...map.values()].map(g => {
+                    let mins = 0; g.items.forEach(ts => mins += tsMinutes(ts));
+                    return { label: g.label, items: g.items, minutes: mins, count: g.items.length };
+                }).sort((a, b) => b.minutes - a.minutes);
+                groups.forEach((g, gi) => {
+                    const nodePath = path + '|' + depth + ':' + gi;
+                    rows.push({ id: nodePath, depth, type: 'group', dim,
+                        label: g.label, minutes: g.minutes, count: g.count, hasChildren: true,
+                        expanded: !!expandedNodes.value[nodePath] });
+                    if (expandedNodes.value[nodePath]) build(g.items, depth + 1, nodePath);
+                });
+            };
+            build(drillSource.value, 0, 'root');
+            return rows;
+        });
+
+        const toggleDrillNode = (id) => { expandedNodes.value = { ...expandedNodes.value, [id]: !expandedNodes.value[id] }; };
+
+        // Export the drill-down as a pivot: one row per full (dim0,dim1,dim2) combo.
+        const exportDrilldown = () => {
+            const dims = drillOrder.value;
+            const map = new Map();
+            drillSource.value.forEach(ts => {
+                const vals = dims.map(d => dimValue(ts, d).label);
+                const key = vals.join(' ||| ');
+                if (!map.has(key)) map.set(key, { vals, minutes: 0, count: 0 });
+                const g = map.get(key); g.minutes += tsMinutes(ts); g.count++;
+            });
+            const rows = [...map.values()].sort((a, b) => b.minutes - a.minutes).map(g => {
+                const row = {};
+                dims.forEach((d, i) => { row[drillDimLabel(d)] = g.vals[i]; });
+                row['Time Logged'] = fmtDur(Math.floor(g.minutes / 60), g.minutes % 60);
+                row['Logs'] = g.count;
+                return row;
+            });
+            const cols = dims.map(d => ({ key: drillDimLabel(d), label: drillDimLabel(d) }))
+                .concat([{ key: 'Time Logged', label: 'Time Logged' }, { key: 'Logs', label: 'Logs' }]);
+            downloadExport({ title: 'Drill-down Report', sheets: [{ name: 'Report', columns: cols, rows }] }, 'xlsx');
+        };
+        const drillMinFmt = (m) => fmtDur(Math.floor(m / 60), m % 60);
+
         // ===================== Client dual-view toggle =====================
         const clientView = ref('table');   // 'table' | 'grid'
 
@@ -2040,6 +2162,22 @@ createApp({
             selectedReportUser,
             userStats,
             reportSummary,
+            // Reports drill-down
+            DRILL_DIMS,
+            drillOrder,
+            drillPeriod,
+            drillWeek,
+            drillMonth,
+            drillYear,
+            drillQuarter,
+            setDrillDim,
+            drillDimLabel,
+            drillRows,
+            drillSource,
+            drillTotal,
+            toggleDrillNode,
+            exportDrilldown,
+            drillMinFmt,
             // Client view toggle
             clientView,
             // Persistent task timers

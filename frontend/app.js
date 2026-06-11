@@ -150,6 +150,13 @@ createApp({
         };
         const visibleTasks = computed(() => tasks.value.filter(taskVisible));
 
+        // Billing pipeline: a task with a billing_stage has left the active board
+        // and lives in the Billed / Received Fees sections instead.
+        const isBilling = (t) => t.billing_stage === 'Billed' || t.billing_stage === 'Received';
+        const activeTasks = computed(() => visibleTasks.value.filter(t => !isBilling(t)));
+        const billedTasks = computed(() => tasks.value.filter(t => t.billing_stage === 'Billed'));
+        const receivedTasks = computed(() => tasks.value.filter(t => t.billing_stage === 'Received'));
+
         // Reactive Data Store
         const tasks = ref([]);
         const clients = ref([]);
@@ -307,7 +314,9 @@ createApp({
                 'users': 'Staff Personnel Directory',
                 'timesheet': 'Operational Time Logs',
                 'reports': 'EasiBusiness Performance Reports',
-                'activity': 'Personnel Activity Log'
+                'activity': 'Personnel Activity Log',
+                'billed': 'Billed',
+                'received': 'Received Fees'
             };
             return titles[currentTab.value] || 'EasiOffice';
         });
@@ -315,7 +324,7 @@ createApp({
         // Dashboard Stat Summary: dynamically calculates counts strictly for the logged-in staff's tasks (or all for Admin)
         const counts = computed(() => {
             let goingOn = 0, stuck = 0, completed = 0, unassigned = 0;
-            const relevantTasks = visibleTasks.value;
+            const relevantTasks = activeTasks.value;
             relevantTasks.forEach(t => {
                 if (!t.assigned_to || String(t.assigned_to).trim() === "") {
                     unassigned++;
@@ -330,7 +339,7 @@ createApp({
 
         // Computed Filters for Dashboard strictly reflecting active card selection
         const filteredDashboardTasks = computed(() => {
-            let list = visibleTasks.value;
+            let list = activeTasks.value;
             if (activeDashboardFilter.value === 'Unassigned') {
                 list = list.filter(t => !t.assigned_to || String(t.assigned_to).trim() === "");
             } else if (activeDashboardFilter.value === 'Working') {
@@ -352,7 +361,7 @@ createApp({
 
         const boardColumns = computed(() => {
             const showUnassigned = canSeeAll.value || can('assign_task');
-            let list = visibleTasks.value;
+            let list = activeTasks.value;
 
             const cols = [];
             if (showUnassigned) cols.push({ key: 'Unassigned', label: 'Unassigned', icon: 'fa-user-slash', accent: '#8E8E93' });
@@ -453,7 +462,7 @@ createApp({
 
         // Computed Filters for Lists: enforces access control visibility rules
         const filteredTasks = computed(() => {
-            let list = visibleTasks.value;
+            let list = activeTasks.value;
             return list.filter(t => {
                 const search = taskSearch.value.toLowerCase();
                 const matchSearch = !taskSearch.value || 
@@ -742,6 +751,68 @@ createApp({
                 }
             } catch (e) { console.error('Delete client error', e); }
         };
+
+        // ===================== Billing pipeline =====================
+        const fmtMoney = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const showBillingModal = ref(false);
+        const billingTask = ref(null);
+        const billingDecision = ref('');     // '' | 'Yes' | 'No'
+        const billedAmount = ref('');
+        const gstAmount = ref('');
+        const billingBusy = ref(false);
+        const billingError = ref('');
+        const billingTotal = computed(() => (parseFloat(billedAmount.value) || 0) + (parseFloat(gstAmount.value) || 0));
+        const billingReady = computed(() => billingDecision.value === 'Yes' && parseFloat(billedAmount.value) > 0);
+
+        const openBillingModal = (task) => {
+            billingTask.value = task;
+            billingDecision.value = '';
+            billedAmount.value = '';
+            gstAmount.value = '';
+            billingError.value = '';
+            showBillingModal.value = true;
+        };
+        const closeBillingModal = () => { showBillingModal.value = false; billingTask.value = null; };
+
+        const confirmBilling = async () => {
+            if (!billingReady.value) return;
+            billingBusy.value = true; billingError.value = '';
+            try {
+                const res = await apiFetch(`/api/tasks/${billingTask.value.id}/billing`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'bill', billed_amount: parseFloat(billedAmount.value), gst_amount: parseFloat(gstAmount.value) || 0 })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) { billingError.value = data.message || 'Could not bill this task.'; return; }
+                showBillingModal.value = false; billingTask.value = null;
+                await fetchData();
+            } catch (e) {
+                console.error('Billing error', e);
+                billingError.value = 'Could not bill this task. Please try again.';
+            } finally { billingBusy.value = false; }
+        };
+
+        const billingAction = async (task, action) => {
+            try {
+                const res = await apiFetch(`/api/tasks/${task.id}/billing`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action })
+                });
+                if (res.ok) { await fetchData(); }
+                else { const err = await res.json().catch(() => ({})); alert(err.message || 'Action failed.'); }
+            } catch (e) { console.error('Billing action error', e); }
+        };
+        const markReceived = (task) => billingAction(task, 'receive');
+        const moveBackToBilled = (task) => billingAction(task, 'unreceive');
+        const moveBackToCompleted = (task) => { if (confirm('Move this task back to Completed (remove it from Billed)?')) billingAction(task, 'unbill'); };
+
+        const sumBilling = (list) => {
+            let billed = 0, gst = 0, total = 0;
+            list.forEach(t => { billed += t.billed_amount || 0; gst += t.gst_amount || 0; total += t.total_amount || 0; });
+            return { billed, gst, total, count: list.length };
+        };
+        const billedTotals = computed(() => sumBilling(billedTasks.value));
+        const receivedTotals = computed(() => sumBilling(receivedTasks.value));
 
         // Clients API Actions (with edits support)
         const startEditClient = (clientObj) => {
@@ -1522,6 +1593,27 @@ createApp({
                         ]
                     };
                 }
+                case 'billed':
+                case 'received': {
+                    const isRec = key === 'received';
+                    const cols = [
+                        { key: 'id', label: 'Task ID' },
+                        { key: 'client_name', label: 'Client' },
+                        { key: 'service_name', label: 'Service' },
+                        { key: 'financial_year', label: 'Financial Year' },
+                        { key: 'period', label: 'Period' },
+                        { key: 'billed_amount', label: 'Billed Amount' },
+                        { key: 'gst_amount', label: 'GST Amount' },
+                        { key: 'total_amount', label: 'Total Amount' },
+                        { key: 'billed_date', label: 'Billed Date' }
+                    ];
+                    if (isRec) cols.push({ key: 'received_date', label: 'Received Date' });
+                    const src = isRec ? receivedTasks : billedTasks;
+                    return {
+                        title: isRec ? 'Received Fees' : 'Billed', mode: 'section', columns: cols,
+                        rowsFn: () => src.value.slice(), filters: []
+                    };
+                }
                 default:
                     return { title: 'Export', mode: 'section', columns: [], rowsFn: () => [], filters: [] };
             }
@@ -1819,6 +1911,27 @@ createApp({
             delegateTask,
             deleteTask,
             deleteClient,
+            // Billing pipeline
+            billedTasks,
+            receivedTasks,
+            billedTotals,
+            receivedTotals,
+            fmtMoney,
+            showBillingModal,
+            billingTask,
+            billingDecision,
+            billedAmount,
+            gstAmount,
+            billingBusy,
+            billingError,
+            billingTotal,
+            billingReady,
+            openBillingModal,
+            closeBillingModal,
+            confirmBilling,
+            markReceived,
+            moveBackToBilled,
+            moveBackToCompleted,
             // Delete-user-with-reassignment
             showDeleteUserModal,
             deleteUserTarget,

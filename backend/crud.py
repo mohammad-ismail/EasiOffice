@@ -27,7 +27,9 @@ def get_tasks_with_details(db):
     cursor.execute('''
         SELECT t.id, c.name as client_name, s.name as service_name, t.financial_year, t.period,
                t.status, t.assigned_to, u.full_name as assigned_to_name, t.client_id, t.due_date,
-               t.delegated_to, d.full_name as delegated_to_name
+               t.delegated_to, d.full_name as delegated_to_name,
+               t.billing_stage, t.billed_amount, t.gst_amount, t.total_amount,
+               t.billed_date, t.received_date
         FROM task_board t
         LEFT JOIN client_master c ON t.client_id = c.id
         LEFT JOIN service_master s ON t.service_id = s.id
@@ -522,6 +524,44 @@ def delete_client(db, client_id: int):
     cursor.execute('DELETE FROM client_contacts WHERE client_id = ?', (client_id,))
     cursor.execute('DELETE FROM credential_box WHERE client_id = ?', (client_id,))
     cursor.execute('DELETE FROM client_master WHERE id = ?', (client_id,))
+    db.commit()
+    return cursor.rowcount > 0
+
+def count_client_unreceived_tasks(db, client_id: int):
+    """Client tasks whose fees are NOT yet received (anything except billing_stage='Received')."""
+    cursor = db.cursor()
+    cursor.execute('''SELECT COUNT(*) AS n FROM task_board
+                      WHERE client_id = ? AND IFNULL(billing_stage, '') != 'Received' ''', (client_id,))
+    return cursor.fetchone()['n']
+
+# --- Billing pipeline (Completed -> Billed -> Received) -----------------------
+def get_task_for_billing(db, task_id: int):
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT t.id, t.status, t.billing_stage, t.billed_amount, t.gst_amount, t.total_amount,
+               c.name as client_name, s.name as service_name, t.period
+        FROM task_board t
+        LEFT JOIN client_master c ON t.client_id = c.id
+        LEFT JOIN service_master s ON t.service_id = s.id
+        WHERE t.id = ?
+    ''', (task_id,))
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+def set_task_billing(db, task_id: int, fields: dict):
+    """Update only the billing columns supplied in `fields`."""
+    allowed = ('billing_stage', 'billed_amount', 'gst_amount', 'total_amount',
+               'billed_date', 'received_date')
+    sets, vals = [], []
+    for k in allowed:
+        if k in fields:
+            sets.append(f"{k} = ?")
+            vals.append(fields[k])
+    if not sets:
+        return False
+    vals.append(task_id)
+    cursor = db.cursor()
+    cursor.execute(f"UPDATE task_board SET {', '.join(sets)} WHERE id = ?", vals)
     db.commit()
     return cursor.rowcount > 0
 

@@ -177,6 +177,21 @@ def init_db():
     if 'delegated_to' not in tb_cols3:
         cursor.execute("ALTER TABLE task_board ADD COLUMN delegated_to INTEGER")
 
+    # Auto-migration: billing pipeline (Completed -> Billed -> Received Fees)
+    cursor.execute("PRAGMA table_info(task_board)")
+    tb_cols4 = [row[1] for row in cursor.fetchall()]
+    billing_cols = {
+        'billing_stage': "ALTER TABLE task_board ADD COLUMN billing_stage TEXT",   # '', 'Billed', 'Received'
+        'billed_amount': "ALTER TABLE task_board ADD COLUMN billed_amount REAL",
+        'gst_amount': "ALTER TABLE task_board ADD COLUMN gst_amount REAL",
+        'total_amount': "ALTER TABLE task_board ADD COLUMN total_amount REAL",
+        'billed_date': "ALTER TABLE task_board ADD COLUMN billed_date TEXT",
+        'received_date': "ALTER TABLE task_board ADD COLUMN received_date TEXT",
+    }
+    for col, ddl in billing_cols.items():
+        if col not in tb_cols4:
+            cursor.execute(ddl)
+
     conn.commit()
     conn.close()
 

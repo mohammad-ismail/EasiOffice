@@ -471,6 +471,78 @@ def delete_single_task(task_id):
     db.close()
     return jsonify({"status": "success"})
 
+
+@app.route('/api/tasks/<int:task_id>/billing', methods=['PUT'])
+@require_perm('manage_billing')
+def update_task_billing(task_id):
+    """Move a task through the billing pipeline:
+       bill (Completed->Billed), unbill (Billed->Completed),
+       receive (Billed->Received), unreceive (Received->Billed)."""
+    data = get_body()
+    action = (data.get('action') or '').lower()
+    db = get_db()
+    task = crud.get_task_for_billing(db, task_id)
+    if not task:
+        db.close()
+        abort(404, description="Task not found")
+    label = f"'{task['client_name']} - {task['service_name']}' ({task['period']})"
+    today = datetime.now().strftime('%Y-%m-%d')
+    stage = task['billing_stage'] or ''
+
+    if action == 'bill':
+        if task['status'] != 'Completed':
+            db.close()
+            abort(400, description="Only completed tasks can be billed.")
+        if stage in ('Billed', 'Received'):
+            db.close()
+            abort(400, description="This task is already in the billing pipeline.")
+        try:
+            billed = float(data.get('billed_amount'))
+        except (TypeError, ValueError):
+            db.close()
+            abort(400, description="Billed amount is required and must be a number.")
+        if billed <= 0:
+            db.close()
+            abort(400, description="Billed amount must be greater than zero.")
+        try:
+            gst = float(data.get('gst_amount') or 0)
+        except (TypeError, ValueError):
+            db.close()
+            abort(400, description="GST amount must be a number.")
+        if gst < 0:
+            db.close()
+            abort(400, description="GST amount can't be negative.")
+        total = round(billed + gst, 2)
+        crud.set_task_billing(db, task_id, {
+            'billing_stage': 'Billed', 'billed_amount': round(billed, 2),
+            'gst_amount': round(gst, 2), 'total_amount': total, 'billed_date': today,
+        })
+        crud.log_user_action(db, current_username(), "Task Billed",
+                             f"Billed {label}: {round(billed, 2)} + GST {round(gst, 2)} = {total}")
+    elif action == 'unbill':
+        if stage != 'Billed':
+            db.close()
+            abort(400, description="Only billed (not yet received) tasks can be moved back.")
+        crud.set_task_billing(db, task_id, {'billing_stage': '', 'billed_date': None})
+        crud.log_user_action(db, current_username(), "Task Unbilled", f"Moved {label} back to Completed")
+    elif action == 'receive':
+        if stage != 'Billed':
+            db.close()
+            abort(400, description="Only billed tasks can be marked as fees received.")
+        crud.set_task_billing(db, task_id, {'billing_stage': 'Received', 'received_date': today})
+        crud.log_user_action(db, current_username(), "Fees Received", f"Marked fees received for {label}")
+    elif action == 'unreceive':
+        if stage != 'Received':
+            db.close()
+            abort(400, description="This task isn't in Received Fees.")
+        crud.set_task_billing(db, task_id, {'billing_stage': 'Billed', 'received_date': None})
+        crud.log_user_action(db, current_username(), "Fees Received Undone", f"Moved {label} back to Billed")
+    else:
+        db.close()
+        abort(400, description="Unknown billing action.")
+    db.close()
+    return jsonify({"status": "success"})
+
 @app.route('/api/clients', methods=['GET'])
 @login_required
 def read_clients():
@@ -1111,14 +1183,16 @@ def delete_single_client(client_id):
     if not cl:
         db.close()
         abort(404, description="Client not found")
-    # Phase A rule: a client can be deleted only when it has no tasks. (Phase B will
-    # extend this to also allow deletion when every task is in Received Fees.)
+    # A client can be deleted only when it has no tasks, OR when every one of its
+    # tasks has reached Received Fees.
     n_tasks = crud.count_client_tasks(db, client_id)
     if n_tasks > 0:
-        db.close()
-        abort(400, description=f"This client has {n_tasks} task(s) and can't be deleted yet. "
-                               "A client can only be deleted when it has no tasks "
-                               "(or, once billing is enabled, when all its tasks are in Received Fees).")
+        unreceived = crud.count_client_unreceived_tasks(db, client_id)
+        if unreceived > 0:
+            db.close()
+            abort(400, description=f"This client has {unreceived} task(s) not yet in Received Fees. "
+                                   "A client can only be deleted when it has no tasks, or when all "
+                                   "of its tasks have reached Received Fees.")
     crud.delete_client(db, client_id)
     crud.log_user_action(db, current_username(), "Client Deleted",
                          f"Deleted client '{cl['name']}' (with its contacts and stored credentials)")

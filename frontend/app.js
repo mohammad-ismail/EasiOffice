@@ -1090,6 +1090,123 @@ createApp({
             }
         };
 
+        // ===================== Timesheet: file + daily report =====================
+        const tsFileDate = ref(today);
+        const tsFileDesc = ref('');
+        const tsFiling = ref(false);
+        const tsFileMsg = ref('');
+        const fileTimesheet2 = async () => {
+            if (!tsFileDate.value) return;
+            tsFiling.value = true; tsFileMsg.value = '';
+            try {
+                const res = await apiFetch('/api/daily-timesheet', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ log_date: tsFileDate.value, description: tsFileDesc.value })
+                });
+                if (res.ok) { tsFileMsg.value = 'Timesheet filed.'; tsFileDesc.value = ''; await fetchTsReport(); setTimeout(() => tsFileMsg.value = '', 3000); }
+                else { const e = await res.json().catch(() => ({})); tsFileMsg.value = e.message || 'Could not file timesheet.'; }
+            } catch (e) { tsFileMsg.value = 'Could not file timesheet.'; }
+            finally { tsFiling.value = false; }
+        };
+
+        // Report controls
+        const tsPeriod = ref('range');   // range | weekly | monthly | quarterly | halfyearly | yearly
+        const tsFrom = ref(today);
+        const tsTo = ref(today);
+        const tsWeekDate = ref(today);
+        const tsMonth = ref(today.slice(0, 7));
+        const tsMonthCount = ref(1);
+        const tsYear = ref(String(new Date().getFullYear()));
+        const tsYearCount = ref(1);
+        const tsQuarter = ref('Q' + (Math.floor(new Date().getMonth() / 3) + 1));
+        const tsHalf = ref(new Date().getMonth() < 6 ? 'H1' : 'H2');
+        const tsReportUser = ref('all');
+        const tsReport = ref([]);
+        const canPickUser = computed(() => isAdminOrPartner.value || currentUser.value.role === 'Manager');
+
+        const _pad = (n) => String(n).padStart(2, '0');
+        const _iso = (y, m, d) => `${y}-${_pad(m)}-${_pad(d)}`;
+        const _lastDay = (y, m) => new Date(y, m, 0).getDate();
+        const tsRange = computed(() => {
+            const p = tsPeriod.value;
+            if (p === 'weekly') {
+                const a = new Date(tsWeekDate.value + 'T00:00:00');
+                const dow = (a.getDay() + 6) % 7;
+                const mon = new Date(a); mon.setDate(a.getDate() - dow);
+                const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+                const f = (d) => _iso(d.getFullYear(), d.getMonth() + 1, d.getDate());
+                return { from: f(mon), to: f(sun) };
+            }
+            if (p === 'monthly') {
+                const [y, m] = tsMonth.value.split('-').map(Number);
+                const count = Math.max(1, Number(tsMonthCount.value) || 1);
+                let sy = y, sm = m - (count - 1); while (sm < 1) { sm += 12; sy--; }
+                return { from: _iso(sy, sm, 1), to: _iso(y, m, _lastDay(y, m)) };
+            }
+            if (p === 'quarterly') {
+                const y = Number(tsYear.value); const q = Number(tsQuarter.value.slice(1));
+                const sm = (q - 1) * 3 + 1; const em = sm + 2;
+                return { from: _iso(y, sm, 1), to: _iso(y, em, _lastDay(y, em)) };
+            }
+            if (p === 'halfyearly') {
+                const y = Number(tsYear.value); const h = Number(tsHalf.value.slice(1));
+                const sm = h === 1 ? 1 : 7; const em = h === 1 ? 6 : 12;
+                return { from: _iso(y, sm, 1), to: _iso(y, em, _lastDay(y, em)) };
+            }
+            if (p === 'yearly') {
+                const y = Number(tsYear.value); const count = Math.max(1, Number(tsYearCount.value) || 1);
+                return { from: _iso(y - (count - 1), 1, 1), to: _iso(y, 12, 31) };
+            }
+            return { from: tsFrom.value, to: tsTo.value };
+        });
+
+        const fetchTsReport = async () => {
+            const { from, to } = tsRange.value;
+            if (!from || !to) return;
+            let url = `/api/timesheet-report?from=${from}&to=${to}`;
+            if (canPickUser.value) url += `&user_id=${tsReportUser.value || 'all'}`;
+            try {
+                const res = await apiFetch(url);
+                if (res.ok) tsReport.value = await res.json();
+            } catch (e) { console.error('timesheet report', e); }
+        };
+
+        const fmtSecs = (s) => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; };
+        const tsTime = (ts) => ts ? ts.slice(11, 16) : '—';
+        const flagInfo = (f) => ({
+            ontime: { label: 'On time', cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+            late: { label: 'Filed late', cls: 'bg-red-50 text-red-700 border border-red-200' },
+            early: { label: 'Filed early', cls: 'bg-amber-50 text-amber-700 border border-amber-200' }
+        }[f] || { label: '', cls: '' });
+
+        const exportTsReport = () => {
+            const rows = [];
+            tsReport.value.forEach(day => {
+                const base = { date: day.date, user: day.full_name, logged: fmtSecs(day.logged_seconds),
+                               login: day.first_login || '', logout: day.last_logout || '',
+                               flag: flagInfo(day.submission_flag).label || 'On time', description: day.description || '' };
+                if (!day.tasks.length) { rows.push({ ...base, task: '—', client: '', service: '', status: '', start_date: '', start_ts: '', end_ts: '', today: '', total: '' }); return; }
+                day.tasks.forEach(t => rows.push({ ...base,
+                    task: t.task_no ? ('#' + t.task_no) : '', client: t.client_name, service: t.service_name, status: t.status,
+                    start_date: t.start_date || '', start_ts: tsTime(t.start_ts), end_ts: t.running ? 'running' : tsTime(t.end_ts),
+                    today: fmtSecs(t.time_today_seconds), total: fmtSecs(t.total_seconds) }));
+            });
+            const cols = [
+                { key: 'date', label: 'Date' }, { key: 'user', label: 'User' }, { key: 'logged', label: 'Logged-in' },
+                { key: 'login', label: 'Login' }, { key: 'logout', label: 'Logout' },
+                { key: 'task', label: 'Task ID' }, { key: 'client', label: 'Client' }, { key: 'service', label: 'Service' },
+                { key: 'status', label: 'Status' }, { key: 'start_date', label: 'Start Date' },
+                { key: 'start_ts', label: 'Start' }, { key: 'end_ts', label: 'End' },
+                { key: 'today', label: 'Time Today' }, { key: 'total', label: 'Total' },
+                { key: 'flag', label: 'Submission' }, { key: 'description', label: 'Description' }
+            ];
+            downloadExport({ title: 'Timesheet Report', sheets: [{ name: 'Timesheet', columns: cols, rows }] }, exportFormat.value === 'pdf' ? 'pdf' : 'xlsx');
+        };
+
+        watch([tsRange, tsReportUser, () => currentTab.value], () => {
+            if (currentTab.value === 'timesheet') fetchTsReport();
+        });
+
         const launchTaskFromService = (srvObj) => {
             taskForm.value.client_id = '';
             taskForm.value.service_id = srvObj.id;
@@ -2224,6 +2341,31 @@ createApp({
             parseChecklist,
             launchTaskFromService,
             logTimesheet,
+            // Timesheet: file + daily report
+            tsFileDate,
+            tsFileDesc,
+            tsFiling,
+            tsFileMsg,
+            fileTimesheet2,
+            tsPeriod,
+            tsFrom,
+            tsTo,
+            tsWeekDate,
+            tsMonth,
+            tsMonthCount,
+            tsYear,
+            tsYearCount,
+            tsQuarter,
+            tsHalf,
+            tsReportUser,
+            tsReport,
+            canPickUser,
+            tsRange,
+            fetchTsReport,
+            fmtSecs,
+            tsTime,
+            flagInfo,
+            exportTsReport,
             openVaultForClient,
             closeVault,
             saveVaultCredential,

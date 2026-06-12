@@ -286,6 +286,23 @@ def init_db():
     if 'locked' not in tb_cols_l:
         cursor.execute("ALTER TABLE task_board ADD COLUMN locked INTEGER DEFAULT 0")
 
+    # Auto-migration: personal calendar events. Each row is private to its
+    # owner — no sharing across users at this phase.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS calendar_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        event_date TEXT,        -- YYYY-MM-DD
+        start_time TEXT,        -- HH:MM (optional)
+        end_time TEXT,          -- HH:MM (optional)
+        title TEXT,
+        notes TEXT,
+        color TEXT,
+        created_at TEXT,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )
+    ''')
+
     # Auto-migration: in-app notifications (one row per recipient). type names
     # are free-form strings used for icon/text routing in the frontend.
     cursor.execute('''

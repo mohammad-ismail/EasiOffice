@@ -110,6 +110,10 @@
                         <i class="fa-regular fa-clock"></i>
                         <span v-show="!isSidebarCollapsed">Time Sheet</span>
                     </a>
+                    <a href="#" @click="currentTab = 'calendar'" class="nav-link" :class="{ active: currentTab === 'calendar' }" :title="isSidebarCollapsed ? 'Calendar' : ''">
+                        <i class="fa-regular fa-calendar"></i>
+                        <span v-show="!isSidebarCollapsed">Calendar</span>
+                    </a>
                     <a href="#" v-if="can('manage_billing')" @click="currentTab = 'billed'" class="nav-link" :class="{ active: currentTab === 'billed' }" :title="isSidebarCollapsed ? 'Billed' : ''">
                         <i class="fa-solid fa-file-invoice-dollar"></i>
                         <span v-show="!isSidebarCollapsed">Billed</span>
@@ -1278,6 +1282,47 @@
                         </div>
                     </main>
 
+                    <!-- 11. CALENDAR TAB -->
+                    <main v-if="currentTab === 'calendar'" class="p-7 space-y-5 max-w-6xl mx-auto">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex items-center gap-2">
+                                <button @click="shiftCalMonth(-1)" class="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition" title="Previous month"><i class="fa-solid fa-chevron-left"></i></button>
+                                <button @click="goCalToday" class="px-3 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-[13px] font-semibold transition">Today</button>
+                                <button @click="shiftCalMonth(1)" class="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition" title="Next month"><i class="fa-solid fa-chevron-right"></i></button>
+                                <h3 class="text-[20px] font-semibold text-gray-800 ml-2">{{ calMonthLabel }}</h3>
+                            </div>
+                            <div class="text-[12.5px] text-gray-400 italic"><i class="fa-regular fa-circle-user mr-1"></i>Personal calendar — visible only to you</div>
+                        </div>
+
+                        <div class="app-card overflow-hidden">
+                            <!-- Weekday header -->
+                            <div class="grid grid-cols-7 bg-gray-50 border-b border-gray-100 text-[11.5px] font-semibold text-gray-500 uppercase tracking-wide">
+                                <div v-for="d in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']" :key="d" class="px-3 py-2 text-center">{{ d }}</div>
+                            </div>
+                            <!-- Cells -->
+                            <div class="grid grid-cols-7">
+                                <div v-for="cell in calCells" :key="cell.date"
+                                     @click="openCalendarDay(cell)"
+                                     class="border-r border-b border-gray-100 min-h-[110px] p-2 cursor-pointer hover:bg-accent-light/30 transition"
+                                     :class="[cell.inMonth ? 'bg-white' : 'bg-gray-50/60', cell.isToday ? 'ring-2 ring-accent ring-inset' : '']">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-[12.5px] font-semibold" :class="cell.inMonth ? 'text-gray-800' : 'text-gray-300'">{{ cell.day }}</span>
+                                        <span v-if="cell.isToday" class="text-[10px] font-bold text-accent uppercase">Today</span>
+                                    </div>
+                                    <div class="mt-1 space-y-1">
+                                        <div v-for="ev in cell.events.slice(0,3)" :key="ev.id"
+                                             class="text-[11px] px-1.5 py-0.5 rounded leading-tight truncate text-white font-medium"
+                                             :style="{ background: ev.color || '#3B82F6' }"
+                                             :title="ev.title">
+                                            <span v-if="ev.start_time" class="font-mono mr-1">{{ ev.start_time }}</span>{{ ev.title }}
+                                        </div>
+                                        <div v-if="cell.events.length > 3" class="text-[10.5px] text-gray-400">+ {{ cell.events.length - 3 }} more</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+
                     <!-- 10. NOTIFICATIONS TAB -->
                     <main v-if="currentTab === 'notifications'" class="p-7 space-y-5 max-w-3xl mx-auto">
                         <div class="flex items-center justify-between">
@@ -1308,6 +1353,86 @@
                         </div>
                     </main>
 
+                </div>
+            </div>
+
+            <!-- MODAL: CALENDAR DAY -->
+            <div v-if="showCalendarDayModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl border border-gray-100 overflow-hidden max-h-[90vh] flex flex-col">
+                    <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
+                        <h4 class="text-base font-bold flex items-center gap-1.5">
+                            <i class="fa-regular fa-calendar"></i>
+                            <span>{{ calSelectedDate }}</span>
+                        </h4>
+                        <button @click="closeCalendarDayModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5 overflow-y-auto">
+                        <!-- Existing events -->
+                        <div>
+                            <h5 class="text-[12px] font-bold text-gray-500 uppercase tracking-wide mb-2">Events ({{ selectedDayEvents.length }})</h5>
+                            <div v-if="selectedDayEvents.length" class="space-y-2">
+                                <div v-for="ev in selectedDayEvents" :key="ev.id"
+                                     class="p-3 rounded-xl border border-gray-150 flex items-start gap-3"
+                                     :style="{ borderLeft: '4px solid ' + (ev.color || '#3B82F6') }">
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-[14px] font-semibold text-gray-800 truncate">{{ ev.title }}</div>
+                                        <div v-if="ev.start_time || ev.end_time" class="text-[12.5px] text-gray-500 font-mono mt-0.5">
+                                            {{ ev.start_time || '--:--' }}<span v-if="ev.end_time"> – {{ ev.end_time }}</span>
+                                        </div>
+                                        <div v-if="ev.notes" class="text-[12.5px] text-gray-600 mt-1 whitespace-pre-line">{{ ev.notes }}</div>
+                                    </div>
+                                    <div class="flex flex-col items-center gap-1 shrink-0">
+                                        <button @click="startEditCalEvent(ev)" class="text-gray-400 hover:text-accent p-1.5 rounded" title="Edit"><i class="fa-solid fa-pen text-[11px]"></i></button>
+                                        <button @click="deleteCalEvent(ev)" class="text-gray-400 hover:text-red-600 p-1.5 rounded" title="Delete"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-else class="text-center py-6 text-[13px] text-gray-400 italic">No events for this day yet.</div>
+                        </div>
+                        <!-- Form -->
+                        <div>
+                            <h5 class="text-[12px] font-bold text-gray-500 uppercase tracking-wide mb-2">
+                                {{ calEventForm.id ? 'Edit Event' : 'Add Event' }}
+                            </h5>
+                            <form @submit.prevent="submitCalEvent" class="space-y-3">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-500 mb-1">Title</label>
+                                    <input v-model="calEventForm.title" type="text" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm" placeholder="Meeting, deadline, reminder…">
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-500 mb-1">Start time</label>
+                                        <input v-model="calEventForm.start_time" type="time" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-500 mb-1">End time</label>
+                                        <input v-model="calEventForm.end_time" type="time" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-500 mb-1">Notes</label>
+                                    <textarea v-model="calEventForm.notes" rows="3" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm resize-none"></textarea>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-500 mb-1">Colour</label>
+                                    <div class="flex items-center gap-2">
+                                        <button v-for="c in ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#6B7280']" :key="c"
+                                                type="button" @click="calEventForm.color = c"
+                                                class="w-7 h-7 rounded-full border-2"
+                                                :class="calEventForm.color === c ? 'border-gray-700' : 'border-gray-200'"
+                                                :style="{ background: c }"></button>
+                                    </div>
+                                </div>
+                                <div class="flex justify-end gap-2 pt-2">
+                                    <button type="button" @click="calEventForm = { id:null, event_date: calSelectedDate, start_time:'', end_time:'', title:'', notes:'', color:'#3B82F6' }" class="px-3 py-2 text-gray-500 hover:bg-gray-50 rounded-lg text-sm font-semibold">Clear</button>
+                                    <button type="submit" class="px-4 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-semibold transition shadow">
+                                        <i class="fa-solid" :class="calEventForm.id ? 'fa-floppy-disk' : 'fa-plus'"></i>
+                                        {{ calEventForm.id ? 'Save Changes' : 'Add Event' }}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
             </div>
 

@@ -1132,6 +1132,73 @@ def read_all_notifications():
     db.close()
     return jsonify({"status": "success", "marked": n})
 
+
+# --- Personal calendar -------------------------------------------------------
+_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+_TIME_RE = re.compile(r'^\d{2}:\d{2}$')
+
+def _validate_event_payload(data):
+    if not data.get('event_date') or not _DATE_RE.match(str(data['event_date'])):
+        abort(400, description="Event date must be in YYYY-MM-DD format.")
+    for k in ('start_time', 'end_time'):
+        v = data.get(k)
+        if v and not _TIME_RE.match(str(v)):
+            abort(400, description=f"{k} must be in HH:MM format if provided.")
+    if not (data.get('title') or '').strip():
+        abort(400, description="Event title is required.")
+
+
+@app.route('/api/calendar', methods=['GET'])
+@login_required
+def list_my_calendar():
+    db = get_db()
+    from_date = request.args.get('from')
+    to_date = request.args.get('to')
+    if from_date and not _DATE_RE.match(from_date):
+        db.close()
+        abort(400, description="'from' must be in YYYY-MM-DD format.")
+    if to_date and not _DATE_RE.match(to_date):
+        db.close()
+        abort(400, description="'to' must be in YYYY-MM-DD format.")
+    rows = crud.list_calendar_events(db, session.get('user_id'), from_date, to_date)
+    db.close()
+    return jsonify(rows)
+
+
+@app.route('/api/calendar', methods=['POST'])
+@login_required
+def create_my_calendar_event():
+    data = get_body()
+    _validate_event_payload(data)
+    db = get_db()
+    res = crud.create_calendar_event(db, session.get('user_id'), data)
+    db.close()
+    return jsonify(res)
+
+
+@app.route('/api/calendar/<int:event_id>', methods=['PUT'])
+@login_required
+def update_my_calendar_event(event_id):
+    data = get_body()
+    _validate_event_payload(data)
+    db = get_db()
+    ok = crud.update_calendar_event(db, event_id, session.get('user_id'), data)
+    db.close()
+    if not ok:
+        abort(404, description="Event not found")
+    return jsonify({"status": "success"})
+
+
+@app.route('/api/calendar/<int:event_id>', methods=['DELETE'])
+@login_required
+def delete_my_calendar_event(event_id):
+    db = get_db()
+    ok = crud.delete_calendar_event(db, event_id, session.get('user_id'))
+    db.close()
+    if not ok:
+        abort(404, description="Event not found")
+    return jsonify({"status": "success"})
+
 @app.route('/api/client-groups', methods=['GET'])
 @login_required
 def read_client_groups():

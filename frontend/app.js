@@ -629,6 +629,117 @@ createApp({
             }
         };
 
+        // ===================== Personal Calendar =====================
+        const calMonth = ref(today.slice(0, 7));   // YYYY-MM currently displayed
+        const calEvents = ref([]);
+        const calEventForm = ref({ id: null, event_date: today, start_time: '', end_time: '', title: '', notes: '', color: '#3B82F6' });
+        const showCalendarDayModal = ref(false);
+        const calSelectedDate = ref(today);
+
+        const calMonthLabel = computed(() => {
+            const [y, m] = calMonth.value.split('-').map(Number);
+            const d = new Date(y, m - 1, 1);
+            return d.toLocaleString('default', { month: 'long', year: 'numeric' });
+        });
+
+        // 42-cell month grid (6 weeks × 7 days). Always starts on the Monday
+        // of the week that contains the 1st. Cells outside the month carry a flag.
+        const calCells = computed(() => {
+            const [y, m] = calMonth.value.split('-').map(Number);
+            const first = new Date(y, m - 1, 1);
+            const startDow = (first.getDay() + 6) % 7;   // Monday = 0
+            const start = new Date(first); start.setDate(first.getDate() - startDow);
+            const cells = [];
+            const eventsByDate = {};
+            calEvents.value.forEach(ev => {
+                (eventsByDate[ev.event_date] = eventsByDate[ev.event_date] || []).push(ev);
+            });
+            for (let i = 0; i < 42; i++) {
+                const d = new Date(start); d.setDate(start.getDate() + i);
+                const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                cells.push({
+                    date: iso, day: d.getDate(), inMonth: d.getMonth() === m - 1,
+                    isToday: iso === today,
+                    events: eventsByDate[iso] || []
+                });
+            }
+            return cells;
+        });
+
+        const fetchCalendar = async () => {
+            if (!isLoggedIn.value) return;
+            try {
+                const [y, m] = calMonth.value.split('-').map(Number);
+                // Pull a window large enough to cover the visible grid spillover.
+                const first = new Date(y, m - 1, 1);
+                const startDow = (first.getDay() + 6) % 7;
+                const start = new Date(first); start.setDate(first.getDate() - startDow);
+                const end = new Date(start); end.setDate(start.getDate() + 41);
+                const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const res = await apiFetch(`/api/calendar?from=${fmt(start)}&to=${fmt(end)}`);
+                if (res.ok) calEvents.value = await res.json();
+            } catch (e) { /* ignore */ }
+        };
+
+        const shiftCalMonth = (delta) => {
+            const [y, m] = calMonth.value.split('-').map(Number);
+            const d = new Date(y, m - 1 + delta, 1);
+            calMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        };
+        const goCalToday = () => { calMonth.value = today.slice(0, 7); calSelectedDate.value = today; };
+
+        const openCalendarDay = (cell) => {
+            calSelectedDate.value = cell.date;
+            calEventForm.value = { id: null, event_date: cell.date, start_time: '', end_time: '', title: '', notes: '', color: '#3B82F6' };
+            showCalendarDayModal.value = true;
+        };
+        const startEditCalEvent = (ev) => {
+            calEventForm.value = { id: ev.id, event_date: ev.event_date, start_time: ev.start_time || '',
+                                   end_time: ev.end_time || '', title: ev.title, notes: ev.notes || '',
+                                   color: ev.color || '#3B82F6' };
+        };
+        const closeCalendarDayModal = () => { showCalendarDayModal.value = false; };
+
+        const submitCalEvent = async () => {
+            const f = calEventForm.value;
+            if (!f.title || !f.title.trim()) { alert('Event title is required.'); return; }
+            try {
+                const method = f.id ? 'PUT' : 'POST';
+                const url = f.id ? `/api/calendar/${f.id}` : '/api/calendar';
+                const res = await apiFetch(url, {
+                    method, headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ event_date: f.event_date, start_time: f.start_time,
+                                          end_time: f.end_time, title: f.title.trim(),
+                                          notes: f.notes, color: f.color })
+                });
+                if (res.ok) {
+                    calEventForm.value = { id: null, event_date: calSelectedDate.value, start_time: '', end_time: '', title: '', notes: '', color: '#3B82F6' };
+                    await fetchCalendar();
+                } else {
+                    const e = await res.json().catch(() => ({}));
+                    alert(e.message || 'Could not save event.');
+                }
+            } catch (e) { console.error('save event', e); }
+        };
+
+        const deleteCalEvent = async (ev) => {
+            if (!confirm(`Delete event "${ev.title}"?`)) return;
+            try {
+                const res = await apiFetch(`/api/calendar/${ev.id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    if (calEventForm.value.id === ev.id) {
+                        calEventForm.value = { id: null, event_date: calSelectedDate.value, start_time: '', end_time: '', title: '', notes: '', color: '#3B82F6' };
+                    }
+                    await fetchCalendar();
+                }
+            } catch (e) { console.error('delete event', e); }
+        };
+
+        const selectedDayEvents = computed(() => calEvents.value.filter(ev => ev.event_date === calSelectedDate.value));
+
+        watch(calMonth, () => { if (currentTab.value === 'calendar') fetchCalendar(); });
+        watch(() => currentTab.value, (t) => { if (t === 'calendar') fetchCalendar(); });
+
         // ===================== Notifications =====================
         const notifications = ref([]);
         const fetchNotifications = async () => {
@@ -2756,6 +2867,22 @@ createApp({
             isSelfAssignedUnlocked,
             canEditTask,
             toggleTaskLock,
+            // Calendar
+            calMonth,
+            calMonthLabel,
+            calCells,
+            calEvents,
+            calEventForm,
+            calSelectedDate,
+            showCalendarDayModal,
+            selectedDayEvents,
+            shiftCalMonth,
+            goCalToday,
+            openCalendarDay,
+            closeCalendarDayModal,
+            submitCalEvent,
+            deleteCalEvent,
+            startEditCalEvent,
             // Persistent task timers
             timers,
             taskTimerDisplay,

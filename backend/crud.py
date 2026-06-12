@@ -565,6 +565,20 @@ def create_user(db, user_data: dict):
 
 def delete_user(db, user_id: int):
     cursor = db.cursor()
+    # Clean up every row that references the user so foreign_keys=ON doesn't block
+    # the delete. Tables with a FK to users(id): user_sessions, daily_timesheets,
+    # notifications, calendar_events. Timer rows carry a user_id without a FK but
+    # are cleared too for tidiness. (Task assignment/delegation is reassigned
+    # separately by the caller before this runs.)
+    for stmt in (
+        'DELETE FROM notifications WHERE user_id = ?',
+        'DELETE FROM calendar_events WHERE user_id = ?',
+        'DELETE FROM user_sessions WHERE user_id = ?',
+        'DELETE FROM daily_timesheets WHERE user_id = ?',
+        'DELETE FROM task_timers WHERE user_id = ?',
+        'DELETE FROM timer_intervals WHERE user_id = ?',
+    ):
+        cursor.execute(stmt, (user_id,))
     cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
     db.commit()
     return cursor.rowcount > 0

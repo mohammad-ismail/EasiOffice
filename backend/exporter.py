@@ -111,6 +111,24 @@ def build_xlsx(spec):
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     wrap_top = Alignment(vertical="top", wrap_text=True)
 
+    # Hidden helper sheet that holds dropdown option lists. Referencing a range
+    # here (instead of an inline "a,b,c" formula) sidesteps Excel's ~255-char
+    # limit on list validations, so dropdowns work for long client/service lists.
+    from openpyxl.utils import get_column_letter as _gcl
+    lists_ws = None
+    lists_col = 0
+
+    def _list_ref(options):
+        nonlocal lists_ws, lists_col
+        if lists_ws is None:
+            lists_ws = wb.create_sheet(title="_lists")
+            lists_ws.sheet_state = "hidden"
+        lists_col += 1
+        letter = _gcl(lists_col)
+        for ri, opt in enumerate(options, start=1):
+            lists_ws.cell(row=ri, column=lists_col, value=str(opt))
+        return f"=_lists!${letter}$1:${letter}${len(options)}"
+
     used_names = set()
     for sheet in spec["sheets"]:
         # Excel sheet titles: <=31 chars, no  : \ / ? * [ ]  and must be unique
@@ -163,8 +181,10 @@ def build_xlsx(spec):
         for ci, w in enumerate(widths, start=1):
             ws.column_dimensions[get_column_letter(ci)].width = min(max(w + 2, 10), 55)
 
-        # Per-column dropdown lists (e.g. Entity Type on the clients template).
-        # Applied to a generous range of data rows below the header.
+        # Per-column dropdown lists (e.g. Entity Type on the clients template,
+        # Service / Client on the tasks template). Applied to a generous range
+        # of data rows below the header. Short lists use an inline formula; long
+        # ones are written to the hidden _lists sheet and referenced by range.
         first_data = header_row + 1
         last_data = first_data + 500
         for ci, col in enumerate(columns, start=1):
@@ -172,8 +192,8 @@ def build_xlsx(spec):
             if not opts:
                 continue
             letter = get_column_letter(ci)
-            # Excel list validations are capped ~255 chars; keep the joined list short.
-            formula = '"' + ",".join(str(o).replace(",", " ") for o in opts) + '"'
+            inline = '"' + ",".join(str(o).replace(",", " ") for o in opts) + '"'
+            formula = inline if len(inline) <= 250 else _list_ref(opts)
             dv = DataValidation(type="list", formula1=formula, allow_blank=True, showDropDown=False)
             dv.add(f"{letter}{first_data}:{letter}{last_data}")
             ws.add_data_validation(dv)

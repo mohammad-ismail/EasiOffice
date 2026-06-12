@@ -931,11 +931,30 @@ def import_template(entity):
 
     sample = cfg.get('sample')
 
+    # Dynamic option lists for the tasks template — these reflect the current DB,
+    # so newly added services / clients / staff appear in the dropdown next time
+    # the template is downloaded.
+    task_options = {}
+    if entity == 'tasks':
+        db = get_db()
+        c = db.cursor()
+        c.execute('SELECT name FROM service_master ORDER BY name')
+        task_options['service'] = [r['name'] for r in c.fetchall() if r['name']]
+        c.execute('SELECT name FROM client_master ORDER BY name')
+        task_options['client'] = [r['name'] for r in c.fetchall() if r['name']]
+        c.execute('SELECT full_name FROM users ORDER BY full_name')
+        task_options['assigned_to'] = [r['full_name'] for r in c.fetchall() if r['full_name']]
+        task_options['status'] = ['Working', 'Pending', 'Completed']
+        db.close()
+
     def _col(k, lbl, req):
         c = {"key": k, "label": f"{lbl}{' *' if req else ''}"}
         # Clients: Entity Type gets an in-cell dropdown of the canonical list.
         if entity == 'clients' and k == 'entity_type':
             c["options"] = importer.ENTITY_TYPES
+        # Tasks: Service / Client / Assigned To / Status get live DB-backed dropdowns.
+        elif entity == 'tasks' and task_options.get(k):
+            c["options"] = task_options[k]
         return c
 
     if fmt in ('xlsx', 'excel'):

@@ -84,7 +84,8 @@ def get_tasks_with_details(db):
                t.status, t.assigned_to, u.full_name as assigned_to_name, t.client_id, t.due_date,
                t.delegated_to, d.full_name as delegated_to_name,
                t.billing_stage, t.billed_amount, t.gst_amount, t.total_amount,
-               t.billed_date, t.received_date, t.estimated_minutes
+               t.billed_date, t.received_date, t.estimated_minutes,
+               t.created_by, t.locked
         FROM task_board t
         LEFT JOIN client_master c ON t.client_id = c.id
         LEFT JOIN service_master s ON t.service_id = s.id
@@ -92,6 +93,59 @@ def get_tasks_with_details(db):
         LEFT JOIN users d ON t.delegated_to = d.id
     ''')
     return [dict(row) for row in cursor.fetchall()]
+
+
+# --- Task lock ----------------------------------------------------------------
+def set_task_locked(db, task_id: int, locked: bool):
+    cursor = db.cursor()
+    cursor.execute('UPDATE task_board SET locked = ? WHERE id = ?', (1 if locked else 0, task_id))
+    db.commit()
+    return cursor.rowcount > 0
+
+
+# --- Notifications ------------------------------------------------------------
+def add_notification(db, user_id: int, ntype: str, message: str, task_id=None):
+    """Insert a single notification row for one recipient."""
+    if not user_id:
+        return None
+    cur = db.cursor()
+    cur.execute('''INSERT INTO notifications (user_id, type, message, task_id, created_at, read_at)
+                   VALUES (?, ?, ?, ?, ?, NULL)''',
+                (user_id, ntype, message, task_id, _now_str()))
+    db.commit()
+    return cur.lastrowid
+
+def notify_managers(db, ntype: str, message: str, task_id=None, exclude_user_id=None):
+    """Notify every Admin / Partner / Manager (except optionally `exclude_user_id`).
+    Used when an Employee creates a task — the supervisors get pinged."""
+    cur = db.cursor()
+    cur.execute("SELECT id FROM users WHERE role IN ('Admin','Partner','Manager')")
+    for r in cur.fetchall():
+        if exclude_user_id and r['id'] == exclude_user_id:
+            continue
+        add_notification(db, r['id'], ntype, message, task_id)
+
+def list_notifications(db, user_id: int, limit: int = 100):
+    cur = db.cursor()
+    cur.execute('''SELECT n.id, n.type, n.message, n.task_id, n.created_at, n.read_at
+                   FROM notifications n
+                   WHERE n.user_id = ?
+                   ORDER BY n.id DESC LIMIT ?''', (user_id, limit))
+    return [dict(r) for r in cur.fetchall()]
+
+def mark_notification_read(db, notification_id: int, user_id: int):
+    cur = db.cursor()
+    cur.execute('UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ?',
+                (_now_str(), notification_id, user_id))
+    db.commit()
+    return cur.rowcount > 0
+
+def mark_all_notifications_read(db, user_id: int):
+    cur = db.cursor()
+    cur.execute('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL',
+                (_now_str(), user_id))
+    db.commit()
+    return cur.rowcount
 
 def next_task_no(db, financial_year):
     """Next per-financial-year task number (resets to 1 for a new FY)."""
@@ -226,10 +280,11 @@ def create_task(db, task_data: dict):
         assigned = None
     seq = next_task_no(db, task_data['financial_year'])
     est = task_data.get('estimated_minutes') or None
-    cursor.execute('''INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date, task_no, estimated_minutes)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+    created_by = task_data.get('created_by') or None
+    cursor.execute('''INSERT INTO task_board (client_id, service_id, financial_year, period, status, assigned_to, due_date, task_no, estimated_minutes, created_by, locked)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)''',
                    (task_data['client_id'], task_data['service_id'], task_data['financial_year'], task_data['period'],
-                    task_data.get('status', 'Pending'), assigned, task_data.get('due_date'), seq, est))
+                    task_data.get('status', 'Pending'), assigned, task_data.get('due_date'), seq, est, created_by))
     last_id = cursor.lastrowid
     db.commit()
     return {"id": last_id, "created_count": 1}

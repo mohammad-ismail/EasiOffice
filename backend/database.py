@@ -276,6 +276,31 @@ def init_db():
     )
     ''')
 
+    # Auto-migration: who created a task (so we can tell when an assignee is the
+    # creator -> "self-assigned"), and a lock flag that prevents the creator from
+    # further edits while Admin/Partner/Manager can still change it any time.
+    cursor.execute("PRAGMA table_info(task_board)")
+    tb_cols_l = [row[1] for row in cursor.fetchall()]
+    if 'created_by' not in tb_cols_l:
+        cursor.execute("ALTER TABLE task_board ADD COLUMN created_by INTEGER")
+    if 'locked' not in tb_cols_l:
+        cursor.execute("ALTER TABLE task_board ADD COLUMN locked INTEGER DEFAULT 0")
+
+    # Auto-migration: in-app notifications (one row per recipient). type names
+    # are free-form strings used for icon/text routing in the frontend.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        type TEXT,
+        message TEXT,
+        task_id INTEGER,
+        created_at TEXT,
+        read_at TEXT,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )
+    ''')
+
     # Auto-migration: user-facing display IDs for clients (#CL:N) and services
     # (#SER:N). The numeric PK stays the FK target; custom_id is just a label
     # that gets auto-assigned (next-after-max) on create and is editable later.

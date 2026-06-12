@@ -560,6 +560,10 @@ def delegate_task_to_user(task_id):
     crud.delegate_task(db, task_id, user_id)
     crud.log_user_action(db, current_username(), "Task Delegated",
                          f"Delegated task '{task['client_name']} - {task['service_name']}' ({task['period']}) to {delegate_name}")
+    if user_id:
+        msg = (f"{session.get('full_name') or current_username()} delegated task "
+               f"'{task['client_name']} - {task['service_name']}' ({task['period']}) to you")
+        crud.add_notification(db, user_id, 'delegation', msg, task_id=task_id)
     db.close()
     return jsonify({"status": "success"})
 
@@ -1050,6 +1054,9 @@ def create_single_task():
         validation.require(data, 'client_id', 'service_id', 'financial_year')
     validation.validate_financial_year(data.get('financial_year'))
     username = current_username()
+    uid = session.get('user_id')
+    role, _perms = current_role_and_perms()
+    data['created_by'] = uid
     db = get_db()
     result = crud.create_task(db, data)
 
@@ -1063,8 +1070,67 @@ def create_single_task():
 
     details = f"Created task for client '{cl_name}', service '{srv_name}' (Recurrence: {data.get('recurrence_type', 'one_time')})"
     crud.log_user_action(db, username, "Task Created", details)
+
+    # When an Employee creates a task themselves, ping every Admin/Partner/Manager.
+    if role == 'Employee' and 'id' in result:
+        msg = f"{session.get('full_name') or username} created a task for '{cl_name} — {srv_name}'"
+        crud.notify_managers(db, 'self_task_created', msg, task_id=result.get('id'),
+                             exclude_user_id=uid)
     db.close()
     return jsonify(result)
+
+
+# --- Task lock (Admin / Partner / Manager) -----------------------------------
+@app.route('/api/tasks/<int:task_id>/lock', methods=['PUT'])
+@login_required
+def lock_task(task_id):
+    role, _p = current_role_and_perms()
+    if role not in ('Admin', 'Partner', 'Manager'):
+        abort(403, description="Only Admin / Partner / Manager can lock or unlock tasks.")
+    data = get_body()
+    locked = bool(data.get('locked'))
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''SELECT c.name as client_name, s.name as service_name, t.period
+                      FROM task_board t LEFT JOIN client_master c ON t.client_id = c.id
+                      LEFT JOIN service_master s ON t.service_id = s.id WHERE t.id = ?''', (task_id,))
+    task = cursor.fetchone()
+    if not task:
+        db.close()
+        abort(404, description="Task not found")
+    crud.set_task_locked(db, task_id, locked)
+    crud.log_user_action(db, current_username(), "Task Locked" if locked else "Task Unlocked",
+                         f"{'Locked' if locked else 'Unlocked'} task '{task['client_name']} - {task['service_name']}' ({task['period']})")
+    db.close()
+    return jsonify({"status": "success", "locked": locked})
+
+
+# --- Notifications ------------------------------------------------------------
+@app.route('/api/notifications', methods=['GET'])
+@login_required
+def list_my_notifications():
+    db = get_db()
+    items = crud.list_notifications(db, session.get('user_id'))
+    db.close()
+    return jsonify(items)
+
+
+@app.route('/api/notifications/<int:nid>/read', methods=['POST'])
+@login_required
+def read_notification(nid):
+    db = get_db()
+    crud.mark_notification_read(db, nid, session.get('user_id'))
+    db.close()
+    return jsonify({"status": "success"})
+
+
+@app.route('/api/notifications/read-all', methods=['POST'])
+@login_required
+def read_all_notifications():
+    db = get_db()
+    n = crud.mark_all_notifications_read(db, session.get('user_id'))
+    db.close()
+    return jsonify({"status": "success", "marked": n})
 
 @app.route('/api/client-groups', methods=['GET'])
 @login_required
@@ -1386,7 +1452,16 @@ def update_task_details(task_id):
     validation.require(data, 'client_id', 'service_id', 'financial_year', 'period')
     validation.validate_financial_year(data.get('financial_year'))
     username = current_username()
+    role, _p = current_role_and_perms()
     db = get_db()
+    # Enforce the lock: once Admin / Partner / Manager locks a task, no other
+    # role (incl. its original creator) can edit it. They can still edit it.
+    cur = db.cursor()
+    cur.execute('SELECT locked FROM task_board WHERE id = ?', (task_id,))
+    row = cur.fetchone()
+    if row and row['locked'] and role not in ('Admin', 'Partner', 'Manager'):
+        db.close()
+        abort(403, description="This task has been locked. Ask an Admin, Partner or Manager to make changes.")
     updated = crud.update_task(db, task_id, data)
     if updated:
         cursor = db.cursor()

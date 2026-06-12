@@ -347,7 +347,9 @@ createApp({
                 'reports': 'EasiBusiness Performance Reports',
                 'activity': 'Personnel Activity Log',
                 'billed': 'Billed',
-                'received': 'Received Fees'
+                'received': 'Received Fees',
+                'notifications': 'Notifications',
+                'calendar': 'My Calendar'
             };
             return titles[currentTab.value] || 'EasiOffice';
         });
@@ -621,9 +623,73 @@ createApp({
                 activityLogs.value = await logsRes.json();
                 await fetchTimers();
                 await fetchPresence();
+                await fetchNotifications();
             } catch (error) {
                 console.error("Error loading firm data:", error);
             }
+        };
+
+        // ===================== Notifications =====================
+        const notifications = ref([]);
+        const fetchNotifications = async () => {
+            if (!isLoggedIn.value) return;
+            try {
+                const res = await apiFetch('/api/notifications');
+                if (res.ok) notifications.value = await res.json();
+            } catch (e) { /* ignore */ }
+        };
+        const unreadNotifications = computed(() => notifications.value.filter(n => !n.read_at));
+        const unreadNotifCount = computed(() => unreadNotifications.value.length);
+        const markNotifRead = async (n) => {
+            if (n.read_at) return;
+            try {
+                await apiFetch(`/api/notifications/${n.id}/read`, { method: 'POST' });
+                n.read_at = new Date().toISOString();
+            } catch (e) { /* ignore */ }
+        };
+        const markAllNotifRead = async () => {
+            try {
+                await apiFetch('/api/notifications/read-all', { method: 'POST' });
+                await fetchNotifications();
+            } catch (e) { /* ignore */ }
+        };
+        const openNotificationTask = async (n) => {
+            await markNotifRead(n);
+            if (n.task_id) {
+                currentTab.value = 'tasks';
+                // Highlight the task by populating the search box so it scrolls into view.
+                const t = tasks.value.find(x => x.id === n.task_id);
+                if (t) taskSearch.value = t.client_name || '';
+            }
+        };
+        const notifIcon = (n) => {
+            if (n.type === 'delegation') return 'fa-share-from-square';
+            if (n.type === 'self_task_created') return 'fa-user-pen';
+            return 'fa-bell';
+        };
+
+        // ===================== Task lock =====================
+        const canLockTasks = computed(() => ['Admin', 'Partner', 'Manager'].includes(currentUser.value.role));
+        // A task is self-assigned & unlocked: rendered with the blue dotted style.
+        const isSelfAssignedUnlocked = (t) =>
+            !!(t && !t.locked && t.created_by && t.assigned_to && t.created_by === t.assigned_to);
+        // Whether the current user is allowed to edit a task's details right now.
+        const canEditTask = (t) => {
+            if (!can('create_task')) return false;
+            if (t && t.locked && !canLockTasks.value) return false;
+            return true;
+        };
+        const toggleTaskLock = async (task) => {
+            const newLocked = !task.locked;
+            try {
+                const res = await apiFetch(`/api/tasks/${task.id}/lock`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ locked: newLocked })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) { task.locked = newLocked ? 1 : 0; }
+                else { alert(data.message || 'Could not change lock state.'); }
+            } catch (e) { console.error('lock toggle', e); }
         };
 
         // ===================== Presence (who's online / working) =====================
@@ -2392,6 +2458,7 @@ createApp({
             // Presence: heartbeat keeps "online" fresh; poll presence for the dashboard.
             setInterval(sendHeartbeat, 45000);
             setInterval(() => { if (isLoggedIn.value) fetchPresence(); }, 30000);
+            setInterval(() => { if (isLoggedIn.value) fetchNotifications(); }, 30000);
 
             const savedPalette = localStorage.getItem('ca_palette');
             if (savedPalette && palettes[savedPalette]) {
@@ -2676,6 +2743,19 @@ createApp({
             selectedServiceCount,
             bulkDeleteSelectedClients,
             bulkDeleteSelectedServices,
+            // Notifications + task lock
+            notifications,
+            unreadNotifications,
+            unreadNotifCount,
+            fetchNotifications,
+            markNotifRead,
+            markAllNotifRead,
+            openNotificationTask,
+            notifIcon,
+            canLockTasks,
+            isSelfAssignedUnlocked,
+            canEditTask,
+            toggleTaskLock,
             // Persistent task timers
             timers,
             taskTimerDisplay,

@@ -639,6 +639,46 @@ createApp({
         };
         const onlineUsers = computed(() => presence.value.filter(p => p.online));
 
+        // ===================== Profile / Change Password =====================
+        const showProfileModal = ref(false);
+        const profilePwd = ref({ current: '', next: '', confirm: '' });
+        const profileBusy = ref(false);
+        const profileError = ref('');
+        const profileSuccess = ref('');
+        const openProfileModal = () => {
+            profilePwd.value = { current: '', next: '', confirm: '' };
+            profileError.value = ''; profileSuccess.value = '';
+            showProfileModal.value = true;
+        };
+        const closeProfileModal = () => { showProfileModal.value = false; };
+        const submitOwnPassword = async () => {
+            profileError.value = ''; profileSuccess.value = '';
+            if (!profilePwd.value.current || !profilePwd.value.next) {
+                profileError.value = 'Please fill in your current and new password.'; return;
+            }
+            if (profilePwd.value.next.length < 6) {
+                profileError.value = 'New password must be at least 6 characters.'; return;
+            }
+            if (profilePwd.value.next !== profilePwd.value.confirm) {
+                profileError.value = 'The new password and its confirmation do not match.'; return;
+            }
+            profileBusy.value = true;
+            try {
+                const res = await apiFetch('/api/me/password', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ current_password: profilePwd.value.current,
+                                          new_password: profilePwd.value.next })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) { profileError.value = data.message || 'Could not change password.'; return; }
+                profileSuccess.value = 'Password updated.';
+                profilePwd.value = { current: '', next: '', confirm: '' };
+                setTimeout(() => { showProfileModal.value = false; profileSuccess.value = ''; }, 1500);
+            } catch (e) {
+                profileError.value = 'Could not change password. Please try again.';
+            } finally { profileBusy.value = false; }
+        };
+
         // Authentication Handlers
         const handleLogin = async () => {
             loginError.value = '';
@@ -2376,6 +2416,15 @@ createApp({
             filteredLogs,
             handleLogin,
             handleLogout,
+            // Self-service profile / password change
+            showProfileModal,
+            profilePwd,
+            profileBusy,
+            profileError,
+            profileSuccess,
+            openProfileModal,
+            closeProfileModal,
+            submitOwnPassword,
             updateTaskStatus,
             startEditTask,
             closeTaskModal,

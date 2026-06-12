@@ -314,6 +314,41 @@ def presence():
     return jsonify(data)
 
 
+@app.route('/api/me/password', methods=['POST'])
+@login_required
+def change_own_password():
+    """A user changes their own password. The current password is verified
+    before the new one is accepted; the new one must be at least 6 characters."""
+    data = get_body()
+    current = data.get('current_password') or ''
+    new_pw = data.get('new_password') or ''
+    if not current or not new_pw:
+        abort(400, description="Current and new password are required.")
+    if len(new_pw) < 6:
+        abort(400, description="New password must be at least 6 characters.")
+    if new_pw == current:
+        abort(400, description="The new password must be different from the current one.")
+    uid = session.get('user_id')
+    db = get_db()
+    cur = db.cursor()
+    cur.execute('SELECT password FROM users WHERE id = ?', (uid,))
+    row = cur.fetchone()
+    if not row:
+        db.close()
+        abort(404, description="User not found.")
+    ok, _needs_rehash = security.verify_password(row['password'], current)
+    if not ok:
+        db.close()
+        abort(400, description="The current password is incorrect.")
+    cur.execute('UPDATE users SET password = ? WHERE id = ?',
+                (security.hash_password(new_pw), uid))
+    db.commit()
+    crud.log_user_action(db, current_username(), "Password Changed",
+                         "Changed own password via profile menu")
+    db.close()
+    return jsonify({"status": "success"})
+
+
 @app.route('/api/me', methods=['GET'])
 def whoami():
     if not session.get('user_id'):

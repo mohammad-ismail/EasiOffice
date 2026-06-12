@@ -808,34 +808,34 @@ createApp({
             } catch (e) { console.error('lock toggle', e); }
         };
 
-        // Lock a task straight from a notification (Admin/Partner/Manager only),
-        // then open the task for editing.
-        const lockTaskFromNotification = async (n) => {
+        // Approval flow: clicking Approve on an Employee's self_task_created
+        // notification opens the task in the edit modal in "approval mode". The
+        // supervisor can adjust details and click Save Changes to apply +
+        // approve (which sets the lock and notifies the creator), or Cancel to
+        // leave the task pending and the Approve button still available.
+        const approveMode = ref(false);
+        const approveTaskFromNotification = async (n) => {
             if (!n.task_id) return;
-            try {
-                const res = await apiFetch(`/api/tasks/${n.task_id}/lock`, {
-                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ locked: true })
-                });
-                if (!res.ok) {
-                    const e = await res.json().catch(() => ({}));
-                    alert(e.message || 'Could not lock task.'); return;
-                }
-                await markNotifRead(n);
-                await fetchData();
-                // Open the edit modal on the now-locked task so the supervisor can adjust details.
-                const t = tasks.value.find(x => x.id === n.task_id);
-                if (t) { startEditTask(t); }
-                else { currentTab.value = 'tasks'; }
-            } catch (e) { console.error('lock from notif', e); }
+            await markNotifRead(n);
+            const t = tasks.value.find(x => x.id === n.task_id);
+            if (!t) { currentTab.value = 'tasks'; return; }
+            approveMode.value = true;
+            startEditTask(t);
         };
-
-        // Whether a notification's underlying task is currently locked (so we can
-        // hide the Lock button once the action has been taken).
-        const notifTaskLocked = (n) => {
+        const notifTaskApproved = (n) => {
             if (!n || !n.task_id) return false;
             const t = tasks.value.find(x => x.id === n.task_id);
             return !!(t && t.locked);
+        };
+
+        // Approval badge derivation: a task created by an Employee shows either
+        // "Pending approval" (blue) or "Approved" (green). All other tasks show
+        // no badge at all.
+        const approvalBadge = (t) => {
+            if (!t || !t.created_by) return null;
+            const creator = usersList.value.find(u => u.id === t.created_by);
+            if (!creator || creator.role !== 'Employee') return null;
+            return t.locked ? 'approved' : 'pending';
         };
 
         // ===================== Presence (who's online / working) =====================
@@ -971,6 +971,7 @@ createApp({
 
         const closeTaskModal = () => {
             editingTaskId.value = null;
+            approveMode.value = false;
             taskForm.value = { client_id: '', service_id: '', financial_year: '2025-26', period: '', status: 'Working', assigned_to: '', recurrence_type: 'one_time', due_date: '', est_hours: 0, est_minutes: 0 };
             showTaskModal.value = false;
         };
@@ -981,12 +982,16 @@ createApp({
                 const url = editingTaskId.value ? `/api/tasks/${editingTaskId.value}` : '/api/tasks';
                 const estimated_minutes = (Number(taskForm.value.est_hours) || 0) * 60 + (Number(taskForm.value.est_minutes) || 0);
                 const payload = { ...taskForm.value, estimated_minutes };
+                // In approval mode, the server applies edits AND flips the
+                // approved/locked flag + notifies the creator with a diff.
+                if (approveMode.value && editingTaskId.value) payload.approval = true;
                 const res = await apiFetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 if (res.ok) {
+                    approveMode.value = false;
                     closeTaskModal();
                     await fetchData();
                 } else {
@@ -2916,11 +2921,12 @@ createApp({
             openNotificationTask,
             notifIcon,
             canLockTasks,
-            isSelfCreatedUnlocked,
             canEditTask,
             toggleTaskLock,
-            lockTaskFromNotification,
-            notifTaskLocked,
+            approveMode,
+            approveTaskFromNotification,
+            notifTaskApproved,
+            approvalBadge,
             taskView,
             tableTasks,
             // Calendar

@@ -52,24 +52,11 @@ select option:disabled {
     color: #9ca3af;
 }
 
-/* Self-assigned-but-not-yet-locked task card: distinctive blue dotted outline.
-   Once an Admin/Partner/Manager locks the task, this style is removed. */
-.kanban-card.self-assigned-unlocked {
-    outline: 2px dashed #3B82F6;
-    outline-offset: -2px;
-    background-color: rgba(59, 130, 246, 0.04);
-}
+/* Approved (locked) task card: subtle dim so it visually settles into the
+   background — the pending/approved badges carry the real signal. */
 .kanban-card.locked-task {
     background-color: rgba(0, 0, 0, 0.02);
 }
-
-/* Row equivalent of .self-assigned-unlocked in the tasks table view. */
-tr.self-assigned-row {
-    background-color: rgba(59, 130, 246, 0.06);
-    box-shadow: inset 3px 0 0 #3B82F6, inset -3px 0 0 #3B82F6;
-}
-tr.self-assigned-row td:first-child { border-left: 2px dashed #3B82F6; }
-tr.self-assigned-row td:last-child  { border-right: 2px dashed #3B82F6; }
 
 /* ============================================================
    Sharp corners — square everything (per design reference).

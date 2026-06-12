@@ -1512,6 +1512,62 @@ def create_firm_service():
     db.close()
     return jsonify(result)
 
+def _human_minutes(m):
+    try:
+        m = int(m or 0)
+    except (TypeError, ValueError):
+        return '—'
+    if not m:
+        return 'none'
+    h, mm = m // 60, m % 60
+    return f"{h}h {mm}m" if h else f"{mm}m"
+
+
+def _name_of(cur, table, id_):
+    if not id_:
+        return None
+    cur.execute(f"SELECT name FROM {table} WHERE id = ?", (id_,))
+    r = cur.fetchone()
+    return r['name'] if r else None
+
+
+def _full_name_of(cur, user_id):
+    if not user_id:
+        return None
+    cur.execute('SELECT full_name FROM users WHERE id = ?', (user_id,))
+    r = cur.fetchone()
+    return r['full_name'] if r else None
+
+
+def _approval_diff(before, after, cur):
+    """Build a human-readable list of 'X was changed to Y' bullets for the
+    approval notification. before/after are dicts of the task fields."""
+    lines = []
+    if (before.get('client_id') != after.get('client_id')):
+        nb = _name_of(cur, 'client_master', before.get('client_id')) or '—'
+        na = _name_of(cur, 'client_master', after.get('client_id')) or '—'
+        lines.append(f"Client was changed from '{nb}' to '{na}'")
+    if (before.get('service_id') != after.get('service_id')):
+        nb = _name_of(cur, 'service_master', before.get('service_id')) or '—'
+        na = _name_of(cur, 'service_master', after.get('service_id')) or '—'
+        lines.append(f"Service was changed from '{nb}' to '{na}'")
+    if (before.get('financial_year') or '') != (after.get('financial_year') or ''):
+        lines.append(f"Financial year was changed to '{after.get('financial_year') or '—'}'")
+    if (before.get('period') or '') != (after.get('period') or ''):
+        lines.append(f"Period was changed to '{after.get('period') or '—'}'")
+    if (before.get('due_date') or '') != (after.get('due_date') or ''):
+        lines.append(f"Due date was changed to '{after.get('due_date') or '—'}'")
+    if (before.get('status') or '') != (after.get('status') or ''):
+        lines.append(f"Status was changed to '{after.get('status') or '—'}'")
+    if int(before.get('estimated_minutes') or 0) != int(after.get('estimated_minutes') or 0):
+        lines.append(f"Estimated time was changed to {_human_minutes(after.get('estimated_minutes'))}")
+    if (before.get('assigned_to') or 0) != (after.get('assigned_to') or 0):
+        nb = _full_name_of(cur, before.get('assigned_to')) or 'Unassigned'
+        na = _full_name_of(cur, after.get('assigned_to')) or 'Unassigned'
+        lines.append(f"Assignee was changed from {nb} to {na}")
+    return lines
+
+
 @app.route('/api/tasks/<int:task_id>', methods=['PUT'])
 @require_perm('create_task')
 def update_task_details(task_id):
@@ -1520,15 +1576,21 @@ def update_task_details(task_id):
     validation.validate_financial_year(data.get('financial_year'))
     username = current_username()
     role, _p = current_role_and_perms()
+    is_approval = bool(data.get('approval'))
+    if is_approval and role not in ('Admin', 'Partner', 'Manager'):
+        abort(403, description="Only Admin / Partner / Manager can approve tasks.")
     db = get_db()
-    # Enforce the lock: once Admin / Partner / Manager locks a task, no other
-    # role (incl. its original creator) can edit it. They can still edit it.
+    # Enforce the lock: once Admin/Partner/Manager has approved (locked) the
+    # task, only they can keep editing it.
     cur = db.cursor()
-    cur.execute('SELECT locked FROM task_board WHERE id = ?', (task_id,))
+    cur.execute('''SELECT client_id, service_id, financial_year, period, status,
+                          due_date, estimated_minutes, assigned_to, locked, created_by
+                   FROM task_board WHERE id = ?''', (task_id,))
     row = cur.fetchone()
     if row and row['locked'] and role not in ('Admin', 'Partner', 'Manager'):
         db.close()
-        abort(403, description="This task has been locked. Ask an Admin, Partner or Manager to make changes.")
+        abort(403, description="This task has been approved. Ask an Admin, Partner or Manager to make changes.")
+    before = dict(row) if row else {}
     updated = crud.update_task(db, task_id, data)
     if updated:
         cursor = db.cursor()
@@ -1541,10 +1603,37 @@ def update_task_details(task_id):
 
         details = f"Modified task details (ID: {task_id}) for client '{cl_name}', service '{srv_name}' ({data['period']})"
         crud.log_user_action(db, username, "Task Details Updated", details)
+
+        # Approval: mark the task as locked/approved and notify the creator
+        # with a diff of what (if anything) was changed.
+        if is_approval:
+            crud.set_task_locked(db, task_id, True)
+            after = {
+                'client_id': data.get('client_id'),
+                'service_id': data.get('service_id'),
+                'financial_year': data.get('financial_year'),
+                'period': data.get('period'),
+                'status': data.get('status') or before.get('status'),
+                'due_date': data.get('due_date'),
+                'estimated_minutes': data.get('estimated_minutes'),
+                'assigned_to': (data.get('assigned_to') or None),
+            }
+            diff_lines = _approval_diff(before, after, cursor)
+            who = session.get('full_name') or current_username()
+            if diff_lines:
+                msg = (f"{who} approved your task '{cl_name} — {srv_name}' ({data['period']}). "
+                       f"Changes: " + "; ".join(diff_lines) + ".")
+            else:
+                msg = f"{who} approved your task '{cl_name} — {srv_name}' ({data['period']}) with no changes."
+            creator_id = before.get('created_by')
+            if creator_id and creator_id != session.get('user_id'):
+                crud.add_notification(db, creator_id, 'task_approved', msg, task_id=task_id)
+            crud.log_user_action(db, username, "Task Approved",
+                                 f"Approved task '{cl_name} - {srv_name}' ({data['period']})")
     db.close()
     if not updated:
         abort(404, description="Task not found")
-    return jsonify({"status": "success"})
+    return jsonify({"status": "success", "approved": bool(is_approval)})
 
 @app.route('/api/clients/<int:client_id>', methods=['PUT'])
 @require_perm('manage_clients')

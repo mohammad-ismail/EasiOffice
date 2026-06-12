@@ -456,7 +456,7 @@
                                 <button v-if="can('manage_clients')" @click="openImportModal('clients')" class="px-4 py-2.5 font-semibold border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
                                     <i class="fa-solid fa-file-import"></i> Bulk Upload
                                 </button>
-                                <button v-if="can('manage_clients')" @click="showClientModal = true" class="px-5 py-2.5 font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
+                                <button v-if="can('manage_clients')" @click="openClientModal" class="px-5 py-2.5 font-semibold bg-primary hover:bg-primary-hover text-white rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
                                     <i class="fa-solid fa-plus"></i> Add Client
                                 </button>
                             </div>
@@ -469,7 +469,10 @@
                                     <div class="flex items-center gap-3 min-w-0">
                                         <div class="w-11 h-11 rounded-full text-white font-semibold flex items-center justify-center uppercase text-[17px] shrink-0" style="background: linear-gradient(160deg, var(--color-accent), var(--color-primary));">{{ client.name ? client.name[0] : '?' }}</div>
                                         <div class="min-w-0">
-                                            <div class="font-semibold text-[16px] text-gray-800 leading-tight truncate">{{ client.name }}</div>
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <div class="font-semibold text-[16px] text-gray-800 leading-tight truncate">{{ client.name }}</div>
+                                                <span v-if="client.custom_id" class="font-mono text-[11.5px] text-gray-500 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded">{{ client.custom_id }}</span>
+                                            </div>
                                             <span class="inline-block mt-1 bg-accent-light text-accent px-2 py-0.5 rounded-md text-[12px] font-semibold">{{ client.group_name || 'Individual' }}</span>
                                         </div>
                                     </div>
@@ -521,7 +524,7 @@
                                 <button v-if="can('manage_services')" @click="openImportModal('services')" class="px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5">
                                     <i class="fa-solid fa-file-import"></i> Bulk Upload
                                 </button>
-                                <button v-if="can('manage_services')" @click="showServiceModal = true" class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1.5">
+                                <button v-if="can('manage_services')" @click="openServiceModal" class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold text-sm shadow transition flex items-center gap-1.5">
                                     <i class="fa-solid fa-folder-plus text-xs"></i> Create Service
                                 </button>
                             </div>
@@ -538,6 +541,7 @@
                                             <span>{{ srv.name }}</span>
                                         </h4>
                                         <div class="flex flex-col items-end gap-1">
+                                            <span v-if="srv.custom_id" class="font-mono text-[10px] text-gray-500 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded">{{ srv.custom_id }}</span>
                                             <span class="bg-accent-light border border-accent/20 text-accent px-2 py-0.5 rounded text-[10px] font-bold">Catalog</span>
                                             <span class="text-[9px] text-gray-400 font-mono">Due Day: <strong class="text-accent">{{ srv.default_due_day || 15 }}</strong></span>
                                         </div>
@@ -1256,6 +1260,11 @@
                     <form @submit.prevent="submitClientForm" class="p-6 space-y-4 flex-1 overflow-y-auto pr-3">
                         <div class="grid grid-cols-2 gap-3">
                             <div class="col-span-2">
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Client ID</label>
+                                <input v-model="clientForm.custom_id" type="text" placeholder="#CL:N (auto-assigned)" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono">
+                                <p class="text-[11px] text-gray-400 mt-1">Auto-assigned (next after the highest). You can change it — must be unique.</p>
+                            </div>
+                            <div class="col-span-2">
                                 <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Client Full Name</label>
                                 <input v-model="clientForm.name" type="text" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
                             </div>
@@ -1375,6 +1384,11 @@
                         <button @click="closeServiceModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
                     </div>
                     <form @submit.prevent="submitServiceForm" class="p-6 space-y-4 flex-1 overflow-y-auto pr-3">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Service ID</label>
+                            <input v-model="serviceForm.custom_id" type="text" placeholder="#SER:N (auto-assigned)" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+                            <span class="text-[10px] text-gray-400 mt-1 block font-medium">Auto-assigned (next after the highest). Editable — must be unique.</span>
+                        </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Service Template Name</label>
                             <input v-model="serviceForm.name" type="text" placeholder="E.g. TDS Quarter Filing" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">

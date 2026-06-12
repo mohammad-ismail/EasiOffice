@@ -7,6 +7,7 @@ module only turns a spreadsheet into clean dict rows. Unknown columns are ignore
 """
 import csv
 import io
+import re
 
 MAX_IMPORT_ROWS = 10000
 
@@ -25,6 +26,7 @@ ENTITY_CONFIGS = {
     "clients": {
         "label": "Clients",
         "aliases": {
+            "custom_id": ["client id", "id", "custom id", "cl id", "cl"],
             "name": ["name", "client name", "client full name", "clientname", "fullname"],
             "entity_type": ["entity type", "entity", "type", "constitution"],
             "pan": ["pan", "pan no", "pan number", "pan card"],
@@ -34,7 +36,11 @@ ENTITY_CONFIGS = {
                                          "folder", "physical folder"],
             "data_location": ["data location", "digital location", "data path", "softcopy location"],
         },
+        # Header-only template (no sample row): the sample previously caused upload
+        # errors when users hit "Upload" without editing it. Column labels include
+        # an "optional" hint where useful.
         "template_columns": [
+            ("custom_id", "Client ID (leave blank to auto-assign, e.g. #CL:7)", False),
             ("name", "Name", True),
             ("entity_type", "Entity Type", False),
             ("pan", "PAN", False),
@@ -43,30 +49,25 @@ ENTITY_CONFIGS = {
             ("physical_folder_location", "Folder Location", False),
             ("data_location", "Data Location", False),
         ],
-        "sample": {
-            "name": "ACME Industries Pvt Ltd", "entity_type": "Company", "pan": "AAACA1234A",
-            "gstin": "27AAACA1234A1Z5", "group": "ACME Group",
-            "physical_folder_location": "Cabinet 3 / Shelf B", "data_location": "D:/clients/acme",
-        },
+        "sample": None,
     },
     "services": {
         "label": "Services",
         "aliases": {
+            "custom_id": ["service id", "id", "custom id", "ser id", "ser"],
             "name": ["name", "service", "service name", "service template"],
             "description": ["description", "desc", "notes", "about"],
             "checklist": ["checklist", "checklist steps", "steps", "checklist items"],
             "default_due_day": ["default due day", "due day", "due date day"],
         },
         "template_columns": [
+            ("custom_id", "Service ID (leave blank to auto-assign, e.g. #SER:5)", False),
             ("name", "Name", True),
             ("description", "Description", False),
             ("checklist", "Checklist", False),
             ("default_due_day", "Default Due Day", False),
         ],
-        "sample": {
-            "name": "GST Return Filing", "description": "Monthly GSTR-3B preparation and filing",
-            "checklist": "Collect invoices, Reconcile 2B, File return", "default_due_day": "20",
-        },
+        "sample": None,
     },
     "users": {
         "label": "Staff Users",
@@ -80,7 +81,7 @@ ENTITY_CONFIGS = {
             ("username", "Username", True),
             ("password", "Password", True),
         ],
-        "sample": {"full_name": "Riya Mehta", "username": "riya", "password": "ChangeMe@123"},
+        "sample": None,
     },
     "tasks": {
         "label": "Tasks",
@@ -102,17 +103,20 @@ ENTITY_CONFIGS = {
             ("assigned_to", "Assigned To", False),
             ("due_date", "Due Date", False),
         ],
-        "sample": {
-            "client": "ACME Industries Pvt Ltd", "service": "Income Tax Return",
-            "financial_year": "2025-26", "period": "Annual", "status": "Working",
-            "assigned_to": "Riya Mehta", "due_date": "2026-03-31",
-        },
+        "sample": None,
     },
 }
 
 
 def _norm_header(h):
-    return " ".join(str(h or "").strip().lower().replace("_", " ").replace("/", " ").split())
+    """Loose header normalisation: lowercase, drop parenthetical hints, drop required-
+    marker '*', collapse separators. This means the template's adorned labels
+    ('Name *', 'Client ID (leave blank to auto-assign, e.g. #CL:7)') still match
+    the user's plain header ('Name', 'Client ID')."""
+    s = str(h or "").lower().strip()
+    s = re.sub(r"\([^)]*\)", " ", s)              # drop parenthetical hints
+    s = s.replace("_", " ").replace("/", " ").replace("*", " ")
+    return " ".join(s.split())
 
 
 def _build_header_map(headers, aliases):

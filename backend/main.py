@@ -174,6 +174,12 @@ def _import_error(e):
     return jsonify({"status": "error", "message": e.message}), 400
 
 
+# Custom-ID clash and similar domain errors raised from crud helpers.
+@app.errorhandler(ValueError)
+def _value_error(e):
+    return jsonify({"status": "error", "message": str(e)}), 400
+
+
 # --- Login brute-force throttle (in-memory, per client IP) --------------------
 _LOGIN_FAILS = {}
 _LOGIN_LOCK = threading.Lock()
@@ -714,6 +720,11 @@ def export_report():
 # so they can resolve names to ids and check uniqueness.
 def _validate_clients(db, parsed):
     valid, errors = [], []
+    # Existing custom IDs in DB (case-insensitive set) for clash detection.
+    cur = db.cursor()
+    cur.execute("SELECT UPPER(custom_id) AS cid FROM client_master WHERE custom_id IS NOT NULL AND custom_id != ''")
+    existing_ids = {r['cid'] for r in cur.fetchall()}
+    seen_ids = set()
     for rec in parsed:
         rn = rec.get('_row', '?')
         name = (rec.get('name') or '').strip()
@@ -726,8 +737,22 @@ def _validate_clients(db, parsed):
             validation.validate_gstin(gstin)
         except ValidationError as ve:
             errors.append({"row": rn, "message": ve.message}); continue
+        # Optional custom_id: validate format, check for clash (DB or within file).
+        raw_cid = (rec.get('custom_id') or '').strip()
+        cid = None
+        if raw_cid:
+            try:
+                cid = crud.normalize_custom_id(raw_cid, crud.CLIENT_ID_PREFIX)
+            except ValueError as e:
+                errors.append({"row": rn, "message": str(e)}); continue
+            key = cid.upper()
+            if key in existing_ids:
+                errors.append({"row": rn, "message": f"Client ID clash: '{cid}' already exists."}); continue
+            if key in seen_ids:
+                errors.append({"row": rn, "message": f"Client ID clash: '{cid}' appears more than once in this file."}); continue
+            seen_ids.add(key)
         valid.append({
-            "name": name, "entity_type": (rec.get('entity_type') or '').strip(),
+            "custom_id": cid, "name": name, "entity_type": (rec.get('entity_type') or '').strip(),
             "pan": pan, "gstin": gstin, "group": (rec.get('group') or '').strip(),
             "physical_folder_location": (rec.get('physical_folder_location') or '').strip(),
             "data_location": (rec.get('data_location') or '').strip(),
@@ -737,6 +762,10 @@ def _validate_clients(db, parsed):
 
 def _validate_services(db, parsed):
     valid, errors = [], []
+    cur = db.cursor()
+    cur.execute("SELECT UPPER(custom_id) AS cid FROM service_master WHERE custom_id IS NOT NULL AND custom_id != ''")
+    existing_ids = {r['cid'] for r in cur.fetchall()}
+    seen_ids = set()
     for rec in parsed:
         rn = rec.get('_row', '?')
         name = (rec.get('name') or '').strip()
@@ -749,8 +778,21 @@ def _validate_services(db, parsed):
                 due_day = validation.validate_int_range(ddd, 1, 31, 'Default Due Day')
             except ValidationError as ve:
                 errors.append({"row": rn, "message": ve.message}); continue
+        raw_cid = (rec.get('custom_id') or '').strip()
+        cid = None
+        if raw_cid:
+            try:
+                cid = crud.normalize_custom_id(raw_cid, crud.SERVICE_ID_PREFIX)
+            except ValueError as e:
+                errors.append({"row": rn, "message": str(e)}); continue
+            key = cid.upper()
+            if key in existing_ids:
+                errors.append({"row": rn, "message": f"Service ID clash: '{cid}' already exists."}); continue
+            if key in seen_ids:
+                errors.append({"row": rn, "message": f"Service ID clash: '{cid}' appears more than once in this file."}); continue
+            seen_ids.add(key)
         valid.append({
-            "name": name, "description": (rec.get('description') or '').strip(),
+            "custom_id": cid, "name": name, "description": (rec.get('description') or '').strip(),
             "checklist": (rec.get('checklist') or '').strip(), "default_due_day": due_day,
         })
     return valid, errors
@@ -848,13 +890,16 @@ def import_template(entity):
     cols = cfg['template_columns']
     fmt = (request.args.get('format') or 'csv').lower()
 
+    sample = cfg.get('sample')
     if fmt in ('xlsx', 'excel'):
         spec = {
             "title": f"{cfg['label']} Import Template",
             "sheets": [{
                 "name": cfg['label'],
                 "columns": [{"key": k, "label": f"{lbl}{' *' if req else ''}"} for k, lbl, req in cols],
-                "rows": [cfg['sample']],
+                # Header-only template by default. If a sample is configured for
+                # the entity, include it so users see the expected shape.
+                "rows": [sample] if sample else [],
             }],
         }
         content, mimetype, _ext = exporter.render(spec, 'xlsx')
@@ -866,7 +911,8 @@ def import_template(entity):
     sio = StringIO()
     writer = _csv.writer(sio)
     writer.writerow([f"{lbl}{' *' if req else ''}" for _k, lbl, req in cols])
-    writer.writerow([cfg['sample'].get(k, '') for k, _l, _r in cols])
+    if sample:
+        writer.writerow([sample.get(k, '') for k, _l, _r in cols])
     return send_file(BytesIO(sio.getvalue().encode('utf-8-sig')), mimetype='text/csv',
                      as_attachment=True, download_name=f"{entity}_import_template.csv")
 

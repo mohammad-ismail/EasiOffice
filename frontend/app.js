@@ -235,6 +235,7 @@ createApp({
         });
 
         const clientForm = ref({
+            custom_id: '',
             name: '',
             group_id: '',
             new_group_name: '',
@@ -245,6 +246,25 @@ createApp({
             data_location: '',
             assigned_to: ''
         });
+
+        // ===================== Custom IDs (#CL:N / #SER:N) =====================
+        // Suggest the next ID for a new entity (based on the max we've already
+        // fetched). The server is still the source of truth and clash-checks on save.
+        const _idNum = (v, prefix) => {
+            if (!v) return 0;
+            const m = String(v).trim().match(new RegExp('^#' + prefix + ':(\\d+)$', 'i'));
+            return m ? parseInt(m[1], 10) : 0;
+        };
+        const nextClientCustomId = () => {
+            let max = 0;
+            clients.value.forEach(c => { const n = _idNum(c.custom_id, 'CL'); if (n > max) max = n; });
+            return `#CL:${max + 1}`;
+        };
+        const nextServiceCustomId = () => {
+            let max = 0;
+            services.value.forEach(s => { const n = _idNum(s.custom_id, 'SER'); if (n > max) max = n; });
+            return `#SER:${max + 1}`;
+        };
 
         const userForm = ref({
             username: '',
@@ -266,6 +286,7 @@ createApp({
         };
 
         const serviceForm = ref({
+            custom_id: '',
             name: '',
             description: '',
             checklist_raw: '',
@@ -877,9 +898,21 @@ createApp({
         const receivedTotals = computed(() => sumBilling(receivedTasks.value));
 
         // Clients API Actions (with edits support)
+        const openClientModal = () => {
+            editingClientId.value = null;
+            clientForm.value = {
+                custom_id: nextClientCustomId(),
+                name: '', group_id: '', new_group_name: '',
+                entity_type: 'Proprietor', pan: '', gstin: '',
+                physical_folder_location: '', data_location: '', assigned_to: ''
+            };
+            showClientModal.value = true;
+        };
+
         const startEditClient = (clientObj) => {
             editingClientId.value = clientObj.id;
             clientForm.value = {
+                custom_id: clientObj.custom_id || '',
                 name: clientObj.name,
                 group_id: clientObj.group_id || '',
                 new_group_name: '',
@@ -895,7 +928,7 @@ createApp({
 
         const closeClientModal = () => {
             editingClientId.value = null;
-            clientForm.value = { name: '', group_id: '', new_group_name: '', entity_type: 'Proprietor', pan: '', gstin: '', physical_folder_location: '', data_location: '', assigned_to: '' };
+            clientForm.value = { custom_id: '', name: '', group_id: '', new_group_name: '', entity_type: 'Proprietor', pan: '', gstin: '', physical_folder_location: '', data_location: '', assigned_to: '' };
             showClientModal.value = false;
         };
 
@@ -911,6 +944,9 @@ createApp({
                 if (res.ok) {
                     closeClientModal();
                     await fetchData();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.message || 'Could not save client.');
                 }
             } catch (error) {
                 console.error("Error saving client master:", error);
@@ -1042,10 +1078,19 @@ createApp({
         };
 
         // Services Catalog API Actions (with edits support)
+        const openServiceModal = () => {
+            editingServiceId.value = null;
+            serviceForm.value = {
+                custom_id: nextServiceCustomId(),
+                name: '', description: '', checklist_raw: '', default_due_day: 15
+            };
+            showServiceModal.value = true;
+        };
         const startEditService = (serviceObj) => {
             editingServiceId.value = serviceObj.id;
             const steps = parseChecklist(serviceObj.checklist_json);
             serviceForm.value = {
+                custom_id: serviceObj.custom_id || '',
                 name: serviceObj.name,
                 description: serviceObj.description,
                 checklist_raw: steps.join(', '),
@@ -1056,7 +1101,7 @@ createApp({
 
         const closeServiceModal = () => {
             editingServiceId.value = null;
-            serviceForm.value = { name: '', description: '', checklist_raw: '', default_due_day: 15 };
+            serviceForm.value = { custom_id: '', name: '', description: '', checklist_raw: '', default_due_day: 15 };
             showServiceModal.value = false;
         };
 
@@ -1072,6 +1117,9 @@ createApp({
                 if (res.ok) {
                     closeServiceModal();
                     await fetchData();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.message || 'Could not save service.');
                 }
             } catch (error) {
                 console.error("Error saving service catalog template:", error);
@@ -1873,7 +1921,7 @@ createApp({
             { key: 'due_date', label: 'Due Date' }
         ];
         const CLIENT_COLS = [
-            { key: 'id', label: 'Client ID' },
+            { key: 'custom_id', label: 'Client ID' },
             { key: 'name', label: 'Name' },
             { key: 'entity_type', label: 'Entity Type' },
             { key: 'pan', label: 'PAN' },
@@ -1932,7 +1980,7 @@ createApp({
                 case 'services':
                     return {
                         title: 'Services', mode: 'section',
-                        columns: [{ key: 'id', label: 'Service ID' }, { key: 'name', label: 'Service' },
+                        columns: [{ key: 'custom_id', label: 'Service ID' }, { key: 'name', label: 'Service' },
                                   { key: 'description', label: 'Description' }, { key: 'default_due_day', label: 'Default Due Day' },
                                   { key: 'checklist', label: 'Checklist' }],
                         rowsFn: () => services.value.map(s => ({ ...s, checklist: parseChecklist(s.checklist_json).join(', ') })),
@@ -2339,10 +2387,13 @@ createApp({
             closeRecurringModal,
             updateRecurringTpl,
             freqLabel,
+            openClientModal,
             startEditClient,
             closeClientModal,
             submitClientForm,
             assignClient,
+            nextClientCustomId,
+            nextServiceCustomId,
             openUserModal,
             startEditUser,
             closeUserModal,
@@ -2392,6 +2443,7 @@ createApp({
             openDeleteUser,
             closeDeleteUser,
             confirmDeleteUser,
+            openServiceModal,
             startEditService,
             closeServiceModal,
             submitServiceForm,

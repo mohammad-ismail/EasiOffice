@@ -276,6 +276,25 @@ def init_db():
     )
     ''')
 
+    # Auto-migration: user-facing display IDs for clients (#CL:N) and services
+    # (#SER:N). The numeric PK stays the FK target; custom_id is just a label
+    # that gets auto-assigned (next-after-max) on create and is editable later.
+    cursor.execute("PRAGMA table_info(client_master)")
+    cm_cols = [row[1] for row in cursor.fetchall()]
+    if 'custom_id' not in cm_cols:
+        cursor.execute("ALTER TABLE client_master ADD COLUMN custom_id TEXT")
+        cursor.execute("SELECT id FROM client_master ORDER BY id")
+        for i, r in enumerate(cursor.fetchall(), start=1):
+            cursor.execute("UPDATE client_master SET custom_id = ? WHERE id = ?", (f'#CL:{i}', r[0]))
+
+    cursor.execute("PRAGMA table_info(service_master)")
+    sm_cols2 = [row[1] for row in cursor.fetchall()]
+    if 'custom_id' not in sm_cols2:
+        cursor.execute("ALTER TABLE service_master ADD COLUMN custom_id TEXT")
+        cursor.execute("SELECT id FROM service_master ORDER BY id")
+        for i, r in enumerate(cursor.fetchall(), start=1):
+            cursor.execute("UPDATE service_master SET custom_id = ? WHERE id = ?", (f'#SER:{i}', r[0]))
+
     # Auto-migration: the user's filed timesheet for a day (date + optional notes).
     # submitted_at records WHEN it was filed, so late/early submissions can be flagged.
     cursor.execute('''

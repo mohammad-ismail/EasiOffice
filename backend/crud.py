@@ -1,7 +1,61 @@
 from . import security
 import json
+import re
 import time
 from datetime import datetime
+
+# --- Custom IDs (#CL:N / #SER:N) ---------------------------------------------
+CLIENT_ID_PREFIX = 'CL'
+SERVICE_ID_PREFIX = 'SER'
+_CUSTOM_ID_RE = {
+    'CL': re.compile(r'^#CL:(\d+)$'),
+    'SER': re.compile(r'^#SER:(\d+)$'),
+}
+
+def normalize_custom_id(value, prefix):
+    """Return canonical '#PREFIX:N' (digits only) or raise ValueError if malformed."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    # Accept loose forms: '12', 'CL:12', '#cl:12', etc.
+    m = re.match(rf'^#?\s*{prefix}\s*[:#-]?\s*(\d+)$', s, re.IGNORECASE)
+    if not m:
+        m2 = re.match(r'^\d+$', s)
+        if not m2:
+            raise ValueError(f"Invalid ID '{value}'. Expected '#{prefix}:N' (N is a number).")
+        return f"#{prefix}:{int(s)}"
+    return f"#{prefix}:{int(m.group(1))}"
+
+def _peak_num(custom_id, prefix):
+    if not custom_id:
+        return 0
+    m = _CUSTOM_ID_RE[prefix].match(str(custom_id).strip())
+    return int(m.group(1)) if m else 0
+
+def next_custom_id(db, table, prefix):
+    """Next-after-max '#PREFIX:N' for the given table (client_master / service_master)."""
+    cur = db.cursor()
+    cur.execute(f"SELECT custom_id FROM {table} WHERE custom_id IS NOT NULL AND custom_id != ''")
+    biggest = 0
+    for r in cur.fetchall():
+        n = _peak_num(r['custom_id'], prefix)
+        if n > biggest:
+            biggest = n
+    return f"#{prefix}:{biggest + 1}"
+
+def custom_id_clash(db, table, custom_id, exclude_id=None):
+    """True iff another row in `table` already uses this custom_id (case-insensitive)."""
+    if not custom_id:
+        return False
+    cur = db.cursor()
+    if exclude_id is None:
+        cur.execute(f"SELECT 1 FROM {table} WHERE UPPER(custom_id) = UPPER(?)", (custom_id,))
+    else:
+        cur.execute(f"SELECT 1 FROM {table} WHERE UPPER(custom_id) = UPPER(?) AND id != ?",
+                    (custom_id, exclude_id))
+    return cur.fetchone() is not None
 
 def log_user_action(db, username: str, action: str, details: str):
     try:
@@ -62,7 +116,7 @@ def assign_task(db, task_id: int, user_id):
 def get_clients(db):
     cursor = db.cursor()
     cursor.execute('''
-        SELECT c.id, c.name, c.entity_type, c.pan, c.gstin, c.physical_folder_location, c.data_location,
+        SELECT c.id, c.custom_id, c.name, c.entity_type, c.pan, c.gstin, c.physical_folder_location, c.data_location,
                c.group_id, g.name as group_name,
                c.assigned_to, u.full_name as assigned_to_name
         FROM client_master c
@@ -80,7 +134,7 @@ def assign_client(db, client_id: int, user_id):
 
 def get_services(db):
     cursor = db.cursor()
-    cursor.execute('SELECT id, name, description, checklist_json, default_due_day FROM service_master')
+    cursor.execute('SELECT id, custom_id, name, description, checklist_json, default_due_day FROM service_master')
     return [dict(row) for row in cursor.fetchall()]
 
 # Financial-year month sequence (April start): (month_name, month_number)
@@ -219,28 +273,41 @@ def create_client(db, client_data: dict):
     cursor = db.cursor()
     group_id = client_data.get('group_id')
     new_group_name = client_data.get('new_group_name')
-    
+
     if new_group_name:
         cursor.execute('INSERT INTO client_groups (name) VALUES (?)', (new_group_name,))
         group_id = cursor.lastrowid
-        
+
+    # Pick the requested custom_id (if supplied) or auto-assign the next one.
+    requested = (client_data.get('custom_id') or '').strip() or None
+    if requested:
+        cid = normalize_custom_id(requested, CLIENT_ID_PREFIX)
+        if custom_id_clash(db, 'client_master', cid):
+            raise ValueError(f"Client ID '{cid}' is already in use by another client.")
+    else:
+        cid = next_custom_id(db, 'client_master', CLIENT_ID_PREFIX)
+
     assigned_to = client_data.get('assigned_to') or None
     cursor.execute('''
-        INSERT INTO client_master (group_id, name, entity_type, pan, gstin, physical_folder_location, data_location, assigned_to)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (group_id, client_data['name'], client_data['entity_type'], client_data['pan'], client_data.get('gstin', ''), client_data['physical_folder_location'], client_data.get('data_location', ''), assigned_to))
+        INSERT INTO client_master (group_id, name, entity_type, pan, gstin, physical_folder_location, data_location, assigned_to, custom_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (group_id, client_data['name'], client_data['entity_type'], client_data['pan'], client_data.get('gstin', ''), client_data['physical_folder_location'], client_data.get('data_location', ''), assigned_to, cid))
     db.commit()
-    return {"id": cursor.lastrowid}
+    return {"id": cursor.lastrowid, "custom_id": cid}
 
 def import_clients(db, rows: list):
     """Bulk-insert pre-validated client rows (each a dict of canonical fields).
 
     Group names are resolved to ids case-insensitively, creating any group that
-    doesn't yet exist. Returns the number of clients created.
+    doesn't yet exist. Rows without `custom_id` are auto-assigned the next
+    '#CL:N' (continuing after the highest existing). Returns the number created.
     """
     cursor = db.cursor()
     cursor.execute('SELECT id, name FROM client_groups')
     groups = {(r['name'] or '').strip().lower(): r['id'] for r in cursor.fetchall()}
+    # Seed the running counter from the current max so multi-row inserts stay unique.
+    next_cid = next_custom_id(db, 'client_master', CLIENT_ID_PREFIX)
+    next_num = _peak_num(next_cid, CLIENT_ID_PREFIX)
     created = 0
     for row in rows:
         group_id = None
@@ -253,12 +320,16 @@ def import_clients(db, rows: list):
                 cursor.execute('INSERT INTO client_groups (name) VALUES (?)', (gname,))
                 group_id = cursor.lastrowid
                 groups[key] = group_id
+        cid = (row.get('custom_id') or '').strip() or None
+        if not cid:
+            cid = f"#{CLIENT_ID_PREFIX}:{next_num}"
+            next_num += 1
         cursor.execute('''
-            INSERT INTO client_master (group_id, name, entity_type, pan, gstin, physical_folder_location, data_location, assigned_to)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO client_master (group_id, name, entity_type, pan, gstin, physical_folder_location, data_location, assigned_to, custom_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (group_id, row.get('name', ''), row.get('entity_type', ''),
               row.get('pan', ''), row.get('gstin', ''),
-              row.get('physical_folder_location', ''), row.get('data_location', ''), None))
+              row.get('physical_folder_location', ''), row.get('data_location', ''), None, cid))
         created += 1
     db.commit()
     return created
@@ -266,14 +337,20 @@ def import_clients(db, rows: list):
 def import_services(db, rows: list):
     """Bulk-insert pre-validated service rows. Returns count created."""
     cursor = db.cursor()
+    next_cid = next_custom_id(db, 'service_master', SERVICE_ID_PREFIX)
+    next_num = _peak_num(next_cid, SERVICE_ID_PREFIX)
     created = 0
     for row in rows:
         checklist_list = [item.strip() for item in str(row.get('checklist', '')).replace('\n', ',').split(',') if item.strip()]
         checklist_json = json.dumps(checklist_list)
+        cid = (row.get('custom_id') or '').strip() or None
+        if not cid:
+            cid = f"#{SERVICE_ID_PREFIX}:{next_num}"
+            next_num += 1
         cursor.execute('''
-            INSERT INTO service_master (name, description, checklist_json, default_due_day)
-            VALUES (?, ?, ?, ?)
-        ''', (row.get('name', ''), row.get('description', ''), checklist_json, row.get('default_due_day', 15)))
+            INSERT INTO service_master (name, description, checklist_json, default_due_day, custom_id)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (row.get('name', ''), row.get('description', ''), checklist_json, row.get('default_due_day', 15), cid))
         created += 1
     db.commit()
     return created
@@ -447,12 +524,19 @@ def create_service(db, service_data: dict):
     cursor = db.cursor()
     checklist_list = [item.strip() for item in service_data.get('checklist_raw', '').split(',') if item.strip()]
     checklist_json = json.dumps(checklist_list)
+    requested = (service_data.get('custom_id') or '').strip() or None
+    if requested:
+        cid = normalize_custom_id(requested, SERVICE_ID_PREFIX)
+        if custom_id_clash(db, 'service_master', cid):
+            raise ValueError(f"Service ID '{cid}' is already in use by another service.")
+    else:
+        cid = next_custom_id(db, 'service_master', SERVICE_ID_PREFIX)
     cursor.execute('''
-        INSERT INTO service_master (name, description, checklist_json, default_due_day)
-        VALUES (?, ?, ?, ?)
-    ''', (service_data['name'], service_data['description'], checklist_json, service_data.get('default_due_day', 15)))
+        INSERT INTO service_master (name, description, checklist_json, default_due_day, custom_id)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (service_data['name'], service_data['description'], checklist_json, service_data.get('default_due_day', 15), cid))
     db.commit()
-    return {"id": cursor.lastrowid}
+    return {"id": cursor.lastrowid, "custom_id": cid}
 
 def update_task(db, task_id: int, task_data: dict):
     cursor = db.cursor()
@@ -472,17 +556,28 @@ def update_client(db, client_id: int, client_data: dict):
     cursor = db.cursor()
     group_id = client_data.get('group_id')
     new_group_name = client_data.get('new_group_name')
-    
+
     if new_group_name:
         cursor.execute('INSERT INTO client_groups (name) VALUES (?)', (new_group_name,))
         group_id = cursor.lastrowid
-        
+
+    # custom_id: keep as-is if not supplied; normalise + clash-check if supplied.
+    cursor.execute('SELECT custom_id FROM client_master WHERE id = ?', (client_id,))
+    existing_row = cursor.fetchone()
+    cid = existing_row['custom_id'] if existing_row else None
+    if 'custom_id' in client_data:
+        requested = (client_data.get('custom_id') or '').strip()
+        if requested:
+            cid = normalize_custom_id(requested, CLIENT_ID_PREFIX)
+            if custom_id_clash(db, 'client_master', cid, exclude_id=client_id):
+                raise ValueError(f"Client ID '{cid}' is already in use by another client.")
+
     assigned_to = client_data.get('assigned_to') or None
     cursor.execute('''
         UPDATE client_master
-        SET group_id = ?, name = ?, entity_type = ?, pan = ?, gstin = ?, physical_folder_location = ?, data_location = ?, assigned_to = ?
+        SET group_id = ?, name = ?, entity_type = ?, pan = ?, gstin = ?, physical_folder_location = ?, data_location = ?, assigned_to = ?, custom_id = ?
         WHERE id = ?
-    ''', (group_id, client_data['name'], client_data['entity_type'], client_data['pan'], client_data.get('gstin', ''), client_data['physical_folder_location'], client_data.get('data_location', ''), assigned_to, client_id))
+    ''', (group_id, client_data['name'], client_data['entity_type'], client_data['pan'], client_data.get('gstin', ''), client_data['physical_folder_location'], client_data.get('data_location', ''), assigned_to, cid, client_id))
     db.commit()
     return cursor.rowcount > 0
 
@@ -490,11 +585,20 @@ def update_service(db, service_id: int, service_data: dict):
     cursor = db.cursor()
     checklist_list = [item.strip() for item in service_data.get('checklist_raw', '').split(',') if item.strip()]
     checklist_json = json.dumps(checklist_list)
+    cursor.execute('SELECT custom_id FROM service_master WHERE id = ?', (service_id,))
+    existing_row = cursor.fetchone()
+    cid = existing_row['custom_id'] if existing_row else None
+    if 'custom_id' in service_data:
+        requested = (service_data.get('custom_id') or '').strip()
+        if requested:
+            cid = normalize_custom_id(requested, SERVICE_ID_PREFIX)
+            if custom_id_clash(db, 'service_master', cid, exclude_id=service_id):
+                raise ValueError(f"Service ID '{cid}' is already in use by another service.")
     cursor.execute('''
-        UPDATE service_master 
-        SET name = ?, description = ?, checklist_json = ?, default_due_day = ?
+        UPDATE service_master
+        SET name = ?, description = ?, checklist_json = ?, default_due_day = ?, custom_id = ?
         WHERE id = ?
-    ''', (service_data['name'], service_data['description'], checklist_json, service_data.get('default_due_day', 15), service_id))
+    ''', (service_data['name'], service_data['description'], checklist_json, service_data.get('default_due_day', 15), cid, service_id))
     db.commit()
     return cursor.rowcount > 0
 

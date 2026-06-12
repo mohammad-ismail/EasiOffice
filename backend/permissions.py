@@ -14,7 +14,7 @@ import json
 # All toggleable action capabilities.
 CAPABILITIES = [
     "create_task", "assign_task", "assign_self", "delegate_task",
-    "delete_task", "delete_client", "delete_user", "manage_users",
+    "delete_task", "delete_client", "delete_service", "delete_user", "manage_users",
     "manage_clients", "manage_services", "manage_billing", "reset_timer",
 ]
 
@@ -26,6 +26,7 @@ CAPABILITY_LABELS = {
     "delegate_task": "Delegate tasks to others",
     "delete_task": "Delete tasks",
     "delete_client": "Delete clients",
+    "delete_service": "Delete services",
     "delete_user": "Delete staff accounts",
     "manage_users": "Add / edit staff accounts",
     "manage_clients": "Create / edit clients",

@@ -458,6 +458,28 @@
                                 <input v-model="clientSearch" type="text" placeholder="Search clients by name, PAN, group..." class="pl-10 pr-4 py-2.5 w-full text-[15px] rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
                             </div>
                             <div class="flex items-center gap-2 w-full sm:w-auto">
+                                <!-- Table / Cards view toggle -->
+                                <div class="inline-flex rounded-xl border border-gray-200 overflow-hidden shrink-0">
+                                    <button @click="clientView='table'" class="px-3 py-2 text-[13.5px] font-semibold transition"
+                                            :class="clientView==='table' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                                            title="Table view"><i class="fa-solid fa-table-list"></i></button>
+                                    <button @click="clientView='grid'" class="px-3 py-2 text-[13.5px] font-semibold transition"
+                                            :class="clientView==='grid' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                                            title="Card view"><i class="fa-solid fa-grip"></i></button>
+                                </div>
+                                <!-- Bulk delete dropdown (visible when delete_client is granted) -->
+                                <details v-if="can('delete_client')" class="relative">
+                                    <summary class="list-none cursor-pointer px-4 py-2.5 font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px]">
+                                        <i class="fa-solid fa-trash-can"></i> Delete <span v-if="selectedClientCount" class="text-[12px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ selectedClientCount }}</span>
+                                        <i class="fa-solid fa-chevron-down text-[11px]"></i>
+                                    </summary>
+                                    <div class="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
+                                        <button @click="selectAllClients" class="w-full text-left px-4 py-2 text-[13.5px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ filteredClients.length }})</button>
+                                        <button @click="clearClientSelection" class="w-full text-left px-4 py-2 text-[13.5px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
+                                        <div class="border-t border-gray-100 my-1"></div>
+                                        <button @click="bulkDeleteSelectedClients" :disabled="!selectedClientCount" class="w-full text-left px-4 py-2 text-[13.5px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ selectedClientCount }})</button>
+                                    </div>
+                                </details>
                                 <button @click="openExportModal('clients')" class="px-4 py-2.5 font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap text-[15px] flex-1 sm:flex-none">
                                     <i class="fa-solid fa-file-export"></i> Export
                                 </button>
@@ -470,8 +492,48 @@
                             </div>
                         </div>
 
+                        <!-- Clients TABLE View -->
+                        <div v-if="clientView === 'table'" class="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden animate-fade-in">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-[13.5px]">
+                                    <thead>
+                                        <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 text-[11px] font-bold uppercase tracking-wider">
+                                            <th v-if="can('delete_client')" class="py-3 px-3 w-9"><input type="checkbox" :checked="filteredClients.length && selectedClientCount === filteredClients.length" @change="$event.target.checked ? selectAllClients() : clearClientSelection()"></th>
+                                            <th class="py-3 px-3 whitespace-nowrap">Client ID</th>
+                                            <th class="py-3 px-3">Name</th>
+                                            <th class="py-3 px-3">Group</th>
+                                            <th class="py-3 px-3">Entity</th>
+                                            <th class="py-3 px-3">PAN</th>
+                                            <th class="py-3 px-3">GSTIN</th>
+                                            <th class="py-3 px-3">Cabinet</th>
+                                            <th class="py-3 px-3 text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-50">
+                                        <tr v-for="client in paginatedClients" :key="client.id" class="hover:bg-gray-50/50">
+                                            <td v-if="can('delete_client')" class="py-2.5 px-3"><input type="checkbox" :checked="isClientSelected(client.id)" @change="toggleClientSelected(client.id)"></td>
+                                            <td class="py-2.5 px-3 font-mono text-[12.5px] text-gray-500">{{ client.custom_id || '—' }}</td>
+                                            <td class="py-2.5 px-3 font-semibold text-gray-800">{{ client.name }}</td>
+                                            <td class="py-2.5 px-3 text-gray-600">{{ client.group_name || 'Individual' }}</td>
+                                            <td class="py-2.5 px-3 text-gray-600">{{ client.entity_type }}</td>
+                                            <td class="py-2.5 px-3 font-mono uppercase text-gray-700">{{ client.pan }}</td>
+                                            <td class="py-2.5 px-3 font-mono uppercase text-gray-500">{{ client.gstin || 'N/A' }}</td>
+                                            <td class="py-2.5 px-3 text-gray-500"><i class="fa-solid fa-folder-open text-amber-500 mr-1"></i>{{ client.physical_folder_location }}</td>
+                                            <td class="py-2.5 px-3 text-right whitespace-nowrap">
+                                                <button @click="openContactsForClient(client)" class="text-accent hover:bg-accent-light p-1.5 rounded-lg" title="Contacts"><i class="fa-solid fa-address-book text-[12px]"></i></button>
+                                                <button @click="openVaultForClient(client)" class="text-gray-700 hover:bg-gray-100 p-1.5 rounded-lg" title="Vault"><i class="fa-solid fa-key text-[12px]"></i></button>
+                                                <button v-if="can('manage_clients')" @click="startEditClient(client)" class="text-gray-500 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg" title="Edit"><i class="fa-solid fa-pen text-[12px]"></i></button>
+                                                <button v-if="can('delete_client')" @click="deleteClient(client)" class="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg" title="Delete"><i class="fa-solid fa-trash-can text-[12px]"></i></button>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="filteredClients.length === 0"><td colspan="9" class="py-14 text-center text-gray-400 italic">No clients yet.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
                         <!-- Clients Card Grid -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
+                        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
                             <div v-for="client in paginatedClients" :key="client.id" class="app-card p-3.5 flex flex-col gap-3">
                                 <div class="flex items-start justify-between">
                                     <div class="flex items-center gap-3 min-w-0">
@@ -525,7 +587,27 @@
                                 <h3 class="text-lg font-bold text-gray-800">Compliance Services Catalog</h3>
                                 <p class="text-xs text-gray-500 mt-0.5">Manage custom operational services and launch structured compliance tasks immediately.</p>
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <div class="inline-flex rounded-xl border border-gray-200 overflow-hidden">
+                                    <button @click="serviceView='table'" class="px-3 py-2 text-[13px] font-semibold transition"
+                                            :class="serviceView==='table' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                                            title="Table view"><i class="fa-solid fa-table-list"></i></button>
+                                    <button @click="serviceView='grid'" class="px-3 py-2 text-[13px] font-semibold transition"
+                                            :class="serviceView==='grid' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                                            title="Card view"><i class="fa-solid fa-grip"></i></button>
+                                </div>
+                                <details v-if="can('delete_service')" class="relative">
+                                    <summary class="list-none cursor-pointer px-4 py-2 font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl flex items-center gap-1.5 shadow-sm text-sm">
+                                        <i class="fa-solid fa-trash-can"></i> Delete <span v-if="selectedServiceCount" class="text-[11px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ selectedServiceCount }}</span>
+                                        <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                                    </summary>
+                                    <div class="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
+                                        <button @click="selectAllServices" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ services.length }})</button>
+                                        <button @click="clearServiceSelection" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
+                                        <div class="border-t border-gray-100 my-1"></div>
+                                        <button @click="bulkDeleteSelectedServices" :disabled="!selectedServiceCount" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ selectedServiceCount }})</button>
+                                    </div>
+                                </details>
                                 <button @click="openExportModal('services')" class="px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5">
                                     <i class="fa-solid fa-file-export"></i> Export
                                 </button>
@@ -538,13 +620,51 @@
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
+                        <!-- Services TABLE view -->
+                        <div v-if="serviceView === 'table'" class="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden animate-fade-in">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-[13.5px]">
+                                    <thead>
+                                        <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 text-[11px] font-bold uppercase tracking-wider">
+                                            <th v-if="can('delete_service')" class="py-3 px-3 w-9"><input type="checkbox" :checked="services.length && selectedServiceCount === services.length" @change="$event.target.checked ? selectAllServices() : clearServiceSelection()"></th>
+                                            <th class="py-3 px-3">Service ID</th>
+                                            <th class="py-3 px-3">Name</th>
+                                            <th class="py-3 px-3">Description</th>
+                                            <th class="py-3 px-3 text-center">Due Day</th>
+                                            <th class="py-3 px-3">Checklist</th>
+                                            <th class="py-3 px-3 text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-50">
+                                        <tr v-for="srv in services" :key="srv.id" class="hover:bg-gray-50/50">
+                                            <td v-if="can('delete_service')" class="py-2.5 px-3"><input type="checkbox" :checked="isServiceSelected(srv.id)" @change="toggleServiceSelected(srv.id)"></td>
+                                            <td class="py-2.5 px-3 font-mono text-[12.5px] text-gray-500">{{ srv.custom_id || '—' }}</td>
+                                            <td class="py-2.5 px-3 font-semibold text-gray-800">{{ srv.name }}</td>
+                                            <td class="py-2.5 px-3 text-gray-600 max-w-md truncate">{{ srv.description }}</td>
+                                            <td class="py-2.5 px-3 text-center font-mono text-accent">{{ srv.default_due_day || 15 }}</td>
+                                            <td class="py-2.5 px-3 text-gray-500 max-w-xs truncate">{{ parseChecklist(srv.checklist_json).join(', ') }}</td>
+                                            <td class="py-2.5 px-3 text-right whitespace-nowrap">
+                                                <button v-if="can('create_task')" @click="launchTaskFromService(srv)" class="text-accent hover:bg-accent-light p-1.5 rounded-lg" title="Launch task"><i class="fa-solid fa-bolt text-[12px]"></i></button>
+                                                <button v-if="can('manage_services')" @click="startEditService(srv)" class="text-gray-500 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg" title="Edit"><i class="fa-solid fa-pen text-[12px]"></i></button>
+                                                <button v-if="can('delete_service')" @click="deleteService(srv)" class="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg" title="Delete"><i class="fa-solid fa-trash-can text-[12px]"></i></button>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="services.length === 0"><td colspan="7" class="py-14 text-center text-gray-400 italic">No services yet.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
                             <div v-for="srv in services" :key="srv.id" class="bg-white rounded-2xl shadow-sm border border-gray-150 p-4 flex flex-col justify-between hover:shadow-md transition duration-300 relative overflow-hidden group border-t-4 border-accent">
                                 <div>
                                     <div class="flex justify-between items-start mb-3">
                                         <h4 class="text-base font-bold text-gray-850 truncate max-w-xs leading-snug flex items-center gap-1.5">
                                             <button v-if="can('manage_services')" @click="startEditService(srv)" class="text-xs text-accent hover:text-accent-hover hover:bg-accent-light p-1 rounded-lg transition" title="Edit Service details">
                                                 <i class="fa-solid fa-pen"></i>
+                                            </button>
+                                            <button v-if="can('delete_service')" @click="deleteService(srv)" class="text-xs text-gray-400 hover:text-red-600 hover:bg-red-50 p-1 rounded-lg transition" title="Delete service">
+                                                <i class="fa-solid fa-trash-can"></i>
                                             </button>
                                             <span>{{ srv.name }}</span>
                                         </h4>

@@ -104,13 +104,14 @@ createApp({
         // source of truth and re-checks every action.
         const CAPABILITIES = [
             'create_task', 'assign_task', 'assign_self', 'delegate_task',
-            'delete_task', 'delete_client', 'delete_user', 'manage_users',
+            'delete_task', 'delete_client', 'delete_service', 'delete_user', 'manage_users',
             'manage_clients', 'manage_services', 'manage_billing', 'reset_timer'
         ];
         const CAPABILITY_LABELS = {
             create_task: 'Create tasks', assign_task: 'Assign tasks to others',
             assign_self: 'Assign tasks to themselves', delegate_task: 'Delegate tasks to others',
             delete_task: 'Delete tasks', delete_client: 'Delete clients',
+            delete_service: 'Delete services',
             delete_user: 'Delete staff accounts', manage_users: 'Add / edit staff accounts',
             manage_clients: 'Create / edit clients', manage_services: 'Create / edit services',
             manage_billing: 'Manage billing (Billed / Received)', reset_timer: 'Reset task timers'
@@ -858,6 +859,88 @@ createApp({
                     alert(err.message || 'Could not delete task.');
                 }
             } catch (e) { console.error('Delete task error', e); }
+        };
+
+        // Delete a service (delete_service permission). Backend enforces that no
+        // tasks reference the service.
+        const deleteService = async (service) => {
+            if (!confirm(`Delete the service "${service.name}"? This cannot be undone.`)) return;
+            try {
+                const res = await apiFetch(`/api/services/${service.id}`, { method: 'DELETE' });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) { await fetchData(); }
+                else { alert(data.message || 'Could not delete service.'); }
+            } catch (e) { console.error('Delete service error', e); }
+        };
+
+        // ===================== Bulk select & delete (clients / services) =====================
+        const selectedClientIds = ref(new Set());
+        const selectedServiceIds = ref(new Set());
+        // Reactive accessor: Sets don't trigger Vue reactivity through .has alone, so
+        // expose a tick that we bump on every mutation.
+        const _selTick = ref(0);
+        const isClientSelected = (id) => { void _selTick.value; return selectedClientIds.value.has(id); };
+        const isServiceSelected = (id) => { void _selTick.value; return selectedServiceIds.value.has(id); };
+        const toggleClientSelected = (id) => {
+            const s = selectedClientIds.value;
+            if (s.has(id)) s.delete(id); else s.add(id);
+            _selTick.value++;
+        };
+        const toggleServiceSelected = (id) => {
+            const s = selectedServiceIds.value;
+            if (s.has(id)) s.delete(id); else s.add(id);
+            _selTick.value++;
+        };
+        const selectAllClients = () => {
+            selectedClientIds.value = new Set(filteredClients.value.map(c => c.id));
+            _selTick.value++;
+        };
+        const clearClientSelection = () => { selectedClientIds.value = new Set(); _selTick.value++; };
+        const selectAllServices = () => {
+            selectedServiceIds.value = new Set(services.value.map(s => s.id));
+            _selTick.value++;
+        };
+        const clearServiceSelection = () => { selectedServiceIds.value = new Set(); _selTick.value++; };
+        const selectedClientCount = computed(() => { void _selTick.value; return selectedClientIds.value.size; });
+        const selectedServiceCount = computed(() => { void _selTick.value; return selectedServiceIds.value.size; });
+
+        const bulkDeleteSelectedClients = async () => {
+            const ids = Array.from(selectedClientIds.value);
+            if (!ids.length) return;
+            if (!confirm(`Delete ${ids.length} selected client(s)? This cannot be undone.`)) return;
+            let ok = 0; const failures = [];
+            for (const id of ids) {
+                try {
+                    const res = await apiFetch(`/api/clients/${id}`, { method: 'DELETE' });
+                    if (res.ok) ok++;
+                    else { const d = await res.json().catch(() => ({})); failures.push({ id, msg: d.message || 'failed' }); }
+                } catch (e) { failures.push({ id, msg: 'network error' }); }
+            }
+            clearClientSelection();
+            await fetchData();
+            if (failures.length) {
+                const lines = failures.slice(0, 8).map(f => `• ID ${f.id}: ${f.msg}`).join('\n');
+                alert(`Deleted ${ok} client(s); ${failures.length} could not be deleted:\n${lines}`);
+            }
+        };
+        const bulkDeleteSelectedServices = async () => {
+            const ids = Array.from(selectedServiceIds.value);
+            if (!ids.length) return;
+            if (!confirm(`Delete ${ids.length} selected service(s)? This cannot be undone.`)) return;
+            let ok = 0; const failures = [];
+            for (const id of ids) {
+                try {
+                    const res = await apiFetch(`/api/services/${id}`, { method: 'DELETE' });
+                    if (res.ok) ok++;
+                    else { const d = await res.json().catch(() => ({})); failures.push({ id, msg: d.message || 'failed' }); }
+                } catch (e) { failures.push({ id, msg: 'network error' }); }
+            }
+            clearServiceSelection();
+            await fetchData();
+            if (failures.length) {
+                const lines = failures.slice(0, 8).map(f => `• ID ${f.id}: ${f.msg}`).join('\n');
+                alert(`Deleted ${ok} service(s); ${failures.length} could not be deleted:\n${lines}`);
+            }
         };
 
         // Delete a client (admin/partner / delete_client permission). Backend enforces
@@ -1704,8 +1787,10 @@ createApp({
         };
         const drillMinFmt = (m) => fmtDur(Math.floor(m / 60), m % 60);
 
-        // ===================== Client dual-view toggle =====================
+        // ===================== Client / service dual-view toggle =====================
+        // Table view by default per user preference; can toggle to cards.
         const clientView = ref('table');   // 'table' | 'grid'
+        const serviceView = ref('table');
 
         // ===================== Persistent task timers =====================
         // One timer runs per user; starting another pauses (banks) the previous one,
@@ -2572,8 +2657,25 @@ createApp({
             toggleDrillNode,
             exportDrilldown,
             drillMinFmt,
-            // Client view toggle
+            // Client / service view toggle
             clientView,
+            serviceView,
+            // Delete service + bulk delete (clients + services)
+            deleteService,
+            selectedClientIds,
+            selectedServiceIds,
+            isClientSelected,
+            isServiceSelected,
+            toggleClientSelected,
+            toggleServiceSelected,
+            selectAllClients,
+            clearClientSelection,
+            selectAllServices,
+            clearServiceSelection,
+            selectedClientCount,
+            selectedServiceCount,
+            bulkDeleteSelectedClients,
+            bulkDeleteSelectedServices,
             // Persistent task timers
             timers,
             taskTimerDisplay,

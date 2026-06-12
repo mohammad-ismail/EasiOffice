@@ -1448,6 +1448,30 @@ def delete_single_client(client_id):
     db.close()
     return jsonify({"status": "success"})
 
+@app.route('/api/services/<int:service_id>', methods=['DELETE'])
+@require_perm('delete_service')
+def delete_single_service(service_id):
+    """Delete a service template. Refuses if any tasks still reference the
+    service — point the user to remove or reassign those tasks first."""
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('SELECT name FROM service_master WHERE id = ?', (service_id,))
+    srv = cursor.fetchone()
+    if not srv:
+        db.close()
+        abort(404, description="Service not found")
+    n_tasks = crud.count_service_tasks(db, service_id)
+    if n_tasks > 0:
+        db.close()
+        abort(400, description=f"This service is used by {n_tasks} task(s). "
+                               "Remove or reassign those tasks before deleting the service.")
+    crud.delete_service(db, service_id)
+    crud.log_user_action(db, current_username(), "Service Deleted",
+                         f"Deleted catalog service '{srv['name']}'")
+    db.close()
+    return jsonify({"status": "success"})
+
+
 @app.route('/api/services/<int:service_id>', methods=['PUT'])
 @require_perm('manage_services')
 def update_service_details(service_id):

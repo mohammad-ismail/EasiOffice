@@ -659,6 +659,20 @@ def count_client_tasks(db, client_id: int):
     cursor.execute('SELECT COUNT(*) AS n FROM task_board WHERE client_id = ?', (client_id,))
     return cursor.fetchone()['n']
 
+def count_service_tasks(db, service_id: int):
+    cursor = db.cursor()
+    cursor.execute('SELECT COUNT(*) AS n FROM task_board WHERE service_id = ?', (service_id,))
+    return cursor.fetchone()['n']
+
+def delete_service(db, service_id: int):
+    """Delete a service template and any recurring template tied to it.
+    Caller must ensure there are no task instances referencing the service."""
+    cursor = db.cursor()
+    cursor.execute('DELETE FROM recurring_templates WHERE service_id = ?', (service_id,))
+    cursor.execute('DELETE FROM service_master WHERE id = ?', (service_id,))
+    db.commit()
+    return cursor.rowcount > 0
+
 def delete_client(db, client_id: int):
     """Delete a client and its contacts + stored credentials. Caller must ensure
     the deletion is allowed (e.g. no open tasks)."""

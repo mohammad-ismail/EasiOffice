@@ -824,8 +824,12 @@ createApp({
         const approveTaskFromNotification = async (n) => {
             if (!n.task_id) return;
             await markNotifRead(n);
-            const t = tasks.value.find(x => x.id === n.task_id);
-            if (!t) { currentTab.value = 'tasks'; return; }
+            // Find the task; if it isn't loaded yet, refetch once and retry. Never
+            // navigate away from Notifications — the edit/approve modal is a global
+            // overlay that opens over whatever section the user is on.
+            let t = tasks.value.find(x => x.id === n.task_id);
+            if (!t) { await fetchData(); t = tasks.value.find(x => x.id === n.task_id); }
+            if (!t) { alert('This task is no longer available.'); return; }
             approveMode.value = true;
             startEditTask(t);
         };

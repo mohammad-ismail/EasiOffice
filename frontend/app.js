@@ -501,12 +501,8 @@ createApp({
         });
 
         const filteredClients = computed(() => {
-            let list = clients.value;
-            if (!canSeeAll.value) {
-                // Visible if the user can see a task for the client, or the client is assigned to them
-                const visibleClientIds = new Set(visibleTasks.value.map(t => t.client_id));
-                list = clients.value.filter(c => visibleClientIds.has(c.id) || c.assigned_to === currentUser.value.id);
-            }
+            // Clients (and services) are visible to every logged-in user, regardless of role.
+            const list = clients.value;
             if (!clientSearch.value) return list;
             const search = clientSearch.value.toLowerCase();
             return list.filter(c => {

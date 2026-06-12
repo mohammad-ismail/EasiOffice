@@ -232,8 +232,8 @@
                             </button>
                         </div>
 
-                        <!-- Team status — who's online / working -->
-                        <div class="app-card p-5">
+                        <!-- Team status — who's online / working (hidden for Employees) -->
+                        <div v-if="currentUser.role !== 'Employee'" class="app-card p-5">
                             <h3 class="text-[16px] font-semibold text-gray-800 flex items-center gap-2 mb-4"><i class="fa-solid fa-users text-accent"></i> Team status <span class="text-[12px] font-normal text-gray-400">· {{ onlineUsers.length }} online</span></h3>
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                                 <div v-for="p in presence" :key="p.user_id" class="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-gray-100" :class="p.online ? 'bg-emerald-50/40' : 'bg-gray-50/40'">
@@ -489,7 +489,7 @@
                                     <button @click="openVaultForClient(client)" class="flex-1 px-3 py-2 bg-gray-800 hover:bg-black text-white rounded-lg text-[13.5px] font-semibold transition inline-flex items-center justify-center gap-1.5"><i class="fa-solid fa-key text-[12px]"></i> Vault</button>
                                 </div>
                             </div>
-                            <div v-if="filteredClients.length === 0" class="col-span-full text-center py-14 text-gray-400 italic app-card">No clients visible to you. (Ensure you have assigned tasks.)</div>
+                            <div v-if="filteredClients.length === 0" class="col-span-full text-center py-14 text-gray-400 italic app-card">No clients yet.</div>
                         </div>
 
                         <!-- Pagination -->

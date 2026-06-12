@@ -35,6 +35,10 @@ is small (well within 2 GB).
 ### Put it behind HTTPS (strongly recommended)
 
 Vault passwords and logins should never travel in clear text, even on the LAN.
+Modern browsers also flag every file download served over plain HTTP as
+**"Insecure"** (or block it outright). Serving the app via the Synology reverse
+proxy with HTTPS as below removes that warning for Excel / PDF / template
+downloads — there is no app-side switch that can suppress it on plain HTTP.
 
 1. **Control Panel → Login Portal → Advanced → Reverse Proxy → Create**
    - Source: `https://office.<your-domain-or-nas>` (port 443)

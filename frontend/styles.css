@@ -41,6 +41,17 @@ h1, h2, h3, h4 { letter-spacing: -0.022em; }
 
 [v-cloak] { display: none; }
 
+/* Dropdown options always render against a white menu background, even when the
+   <select> itself sits on a dark panel (e.g. Bulk Engine). Without this, a
+   parent .text-white leaks in and the options become invisible. */
+select option {
+    color: #1f2937;
+    background-color: #ffffff;
+}
+select option:disabled {
+    color: #9ca3af;
+}
+
 /* Self-assigned-but-not-yet-locked task card: distinctive blue dotted outline.
    Once an Admin/Partner/Manager locks the task, this style is removed. */
 .kanban-card.self-assigned-unlocked {

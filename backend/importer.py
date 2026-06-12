@@ -11,6 +11,14 @@ import re
 
 MAX_IMPORT_ROWS = 10000
 
+# Canonical client entity types — shared by the import template dropdown and the
+# add/edit client form on the frontend.
+ENTITY_TYPES = [
+    "Proprietor", "Partnership Firm", "LLP", "Pvt Ltd Company", "HUF",
+    "Individual (Salaried)", "Public Ltd Company", "Charitable Trust",
+    "Societies", "Others",
+]
+
 
 class ImportFileError(Exception):
     """Unreadable / unsupported / wrong-shaped upload -> HTTP 400."""

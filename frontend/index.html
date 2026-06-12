@@ -375,55 +375,61 @@
 
                         <!-- TABLE VIEW (default) -->
                         <div v-if="taskView === 'table'" class="bg-white rounded-2xl shadow-sm border border-gray-150 flex-1 min-h-0 overflow-hidden flex flex-col">
-                            <div class="overflow-auto">
-                                <table class="w-full text-left text-[13.5px]">
-                                    <thead class="bg-gray-50 border-b border-gray-100 text-gray-500 text-[11px] font-bold uppercase tracking-wider sticky top-0 z-10">
+                            <div class="overflow-y-auto">
+                                <table class="w-full table-fixed text-left text-[13px] lined-table">
+                                    <colgroup>
+                                        <col style="width:8%"><col style="width:19%"><col style="width:15%">
+                                        <col style="width:8%"><col style="width:10%"><col style="width:15%">
+                                        <col style="width:13%"><col style="width:12%">
+                                    </colgroup>
+                                    <thead class="bg-gray-50 border-b border-gray-100 text-gray-500 text-[10.5px] font-bold uppercase tracking-wider sticky top-0 z-10">
                                         <tr>
-                                            <th class="py-3 px-3 whitespace-nowrap">Task ID</th>
-                                            <th class="py-3 px-3">Client</th>
-                                            <th class="py-3 px-3">Service</th>
-                                            <th class="py-3 px-3">Period</th>
-                                            <th class="py-3 px-3 whitespace-nowrap">Due Date</th>
-                                            <th class="py-3 px-3">Status</th>
-                                            <th class="py-3 px-3">Assigned</th>
-                                            <th class="py-3 px-3">Delegated</th>
-                                            <th class="py-3 px-3 text-right">Actions</th>
+                                            <th class="py-2.5 px-2">Task ID</th>
+                                            <th class="py-2.5 px-2">Client</th>
+                                            <th class="py-2.5 px-2">Service</th>
+                                            <th class="py-2.5 px-2">Period</th>
+                                            <th class="py-2.5 px-2">Due</th>
+                                            <th class="py-2.5 px-2">Status</th>
+                                            <th class="py-2.5 px-2">Assigned</th>
+                                            <th class="py-2.5 px-2 text-right">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-gray-50">
-                                        <tr v-for="task in tableTasks" :key="task.id" class="hover:bg-gray-50/50">
-                                            <td class="py-2.5 px-3 font-mono text-[12.5px] text-gray-500 whitespace-nowrap">
-                                                {{ taskSerial(task) }}
+                                    <tbody class="divide-y divide-gray-100">
+                                        <tr v-for="task in tableTasks" :key="task.id" class="hover:bg-gray-50/50 align-top">
+                                            <td class="py-2 px-2 font-mono text-[11.5px] text-gray-500 truncate">{{ taskSerial(task) }}</td>
+                                            <td class="py-2 px-2 font-semibold text-gray-800 truncate" :title="task.client_name">{{ task.client_name }}</td>
+                                            <td class="py-2 px-2 text-gray-700 truncate" :title="task.service_name">{{ task.service_name }}</td>
+                                            <td class="py-2 px-2 text-gray-500 truncate">{{ task.period }}</td>
+                                            <td class="py-2 px-2 font-mono text-[11.5px] text-gray-500 whitespace-nowrap">{{ task.due_date || '—' }}</td>
+                                            <td class="py-2 px-2">
+                                                <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold border"
+                                                      :class="{
+                                                        'bg-blue-50 text-blue-700 border-blue-150': task.status === 'Working',
+                                                        'bg-amber-50 text-amber-700 border-amber-150': task.status === 'Pending',
+                                                        'bg-emerald-50 text-emerald-700 border-emerald-150': task.status === 'Completed'
+                                                      }">{{ task.status }}</span>
                                             </td>
-                                            <td class="py-2.5 px-3 font-semibold text-gray-800">
-                                                {{ task.client_name }}
+                                            <td class="py-2 px-2 text-gray-700">
+                                                <div class="truncate" :title="task.assigned_to_name || 'Unassigned'">{{ task.assigned_to_name || 'Unassigned' }}</div>
+                                                <!-- Delegation shown inline: (by assignee → to delegate) -->
+                                                <div v-if="task.delegated_to_name" class="text-[10.5px] text-gray-400 truncate" :title="'Delegated by ' + (task.assigned_to_name || '—') + ' to ' + task.delegated_to_name">
+                                                    ({{ task.assigned_to_name || '—' }} → {{ task.delegated_to_name }})
+                                                </div>
+                                                <!-- Approval state shown small in the Assigned column -->
+                                                <div v-if="approvalBadge(task) === 'approved'" class="text-[10px] font-semibold text-emerald-600">approved</div>
+                                                <div v-else-if="approvalBadge(task) === 'pending'" class="text-[10px] font-semibold text-blue-600">pending approval</div>
                                             </td>
-                                            <td class="py-2.5 px-3 text-gray-700">{{ task.service_name }}</td>
-                                            <td class="py-2.5 px-3 text-gray-500">{{ task.period }}</td>
-                                            <td class="py-2.5 px-3 font-mono text-gray-500">{{ task.due_date || '—' }}</td>
-                                            <td class="py-2.5 px-3">
-                                                <div class="flex items-center gap-1.5 flex-wrap">
-                                                    <span class="px-2 py-0.5 rounded-md text-[11.5px] font-semibold border"
-                                                          :class="{
-                                                            'bg-blue-50 text-blue-700 border-blue-150': task.status === 'Working',
-                                                            'bg-amber-50 text-amber-700 border-amber-150': task.status === 'Pending',
-                                                            'bg-emerald-50 text-emerald-700 border-emerald-150': task.status === 'Completed'
-                                                          }">{{ task.status }}</span>
-                                                    <span v-if="approvalBadge(task) === 'pending'" class="px-1.5 py-0.5 text-[10px] font-bold rounded text-white bg-blue-500 uppercase tracking-wide">Pending</span>
-                                                    <span v-else-if="approvalBadge(task) === 'approved'" class="px-1.5 py-0.5 text-[10px] font-bold rounded text-white bg-emerald-600 uppercase tracking-wide">Approved</span>
+                                            <td class="py-2 px-2 text-right whitespace-nowrap">
+                                                <div class="flex items-center justify-end gap-0.5">
+                                                    <span v-if="taskHasTime(task.id)" class="font-mono text-[11px] text-gray-500 mr-1">{{ taskTimerDisplay(task.id) }}</span>
+                                                    <button v-if="!isTaskRunning(task.id) && task.assigned_to && task.status !== 'Completed'" @click="startTaskTimer(task)" class="text-accent hover:bg-accent-light p-1 rounded" :title="taskHasTime(task.id) ? 'Resume timer' : 'Start timer'"><i class="fa-solid fa-play text-[11px]"></i></button>
+                                                    <button v-else-if="isTaskRunning(task.id)" @click="pauseTaskTimer(task)" class="text-white p-1 rounded" style="background: var(--color-stuck);" title="Pause timer"><i class="fa-solid fa-pause text-[11px]"></i></button>
+                                                    <button v-if="canEditTask(task)" @click="startEditTask(task)" class="text-gray-500 hover:text-accent hover:bg-accent-light p-1 rounded" title="Edit"><i class="fa-solid fa-pen text-[11px]"></i></button>
+                                                    <button v-if="can('delete_task')" @click="deleteTask(task)" class="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1 rounded" title="Delete"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
                                                 </div>
                                             </td>
-                                            <td class="py-2.5 px-3 text-gray-600">{{ task.assigned_to_name || 'Unassigned' }}</td>
-                                            <td class="py-2.5 px-3 text-gray-600">{{ task.delegated_to_name || '—' }}</td>
-                                            <td class="py-2.5 px-3 text-right whitespace-nowrap">
-                                                <button v-if="!isTaskRunning(task.id) && task.assigned_to && task.status !== 'Completed'" @click="startTaskTimer(task)" class="text-accent hover:bg-accent-light p-1.5 rounded-lg" title="Start timer"><i class="fa-solid fa-play text-[11px]"></i></button>
-                                                <button v-else-if="isTaskRunning(task.id)" @click="pauseTaskTimer(task)" class="text-white p-1.5 rounded-lg" style="background: var(--color-stuck);" title="Pause timer"><i class="fa-solid fa-pause text-[11px]"></i></button>
-                                                <button v-if="canLockTasks" @click="toggleTaskLock(task)" class="text-gray-500 hover:text-amber-600 hover:bg-amber-50 p-1.5 rounded-lg" :title="task.locked ? 'Unlock task' : 'Lock task'"><i class="fa-solid text-[11px]" :class="task.locked ? 'fa-lock-open' : 'fa-lock'"></i></button>
-                                                <button v-if="canEditTask(task)" @click="startEditTask(task)" class="text-gray-500 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg" title="Edit"><i class="fa-solid fa-pen text-[11px]"></i></button>
-                                                <button v-if="can('delete_task')" @click="deleteTask(task)" class="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg" title="Delete"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
-                                            </td>
                                         </tr>
-                                        <tr v-if="tableTasks.length === 0"><td colspan="9" class="py-14 text-center text-gray-400 italic">No tasks match the current filter.</td></tr>
+                                        <tr v-if="tableTasks.length === 0"><td colspan="8" class="py-14 text-center text-gray-400 italic">No tasks match the current filter.</td></tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -461,9 +467,6 @@
                                                 <span v-else-if="approvalBadge(task) === 'approved'" class="px-1.5 py-0.5 text-[10px] font-bold rounded text-white bg-emerald-600 uppercase tracking-wide">Approved</span>
                                             </div>
                                             <div class="flex items-center gap-1 shrink-0">
-                                                <button v-if="canLockTasks" @click="toggleTaskLock(task)" class="text-gray-400 hover:text-amber-600 hover:bg-amber-50 p-1.5 rounded-lg transition" :title="task.locked ? 'Unlock task' : 'Lock task'">
-                                                    <i class="fa-solid text-[12px]" :class="task.locked ? 'fa-lock-open' : 'fa-lock'"></i>
-                                                </button>
                                                 <button v-if="canEditTask(task)" @click="startEditTask(task)" class="text-gray-400 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg transition" title="Edit task">
                                                     <i class="fa-solid fa-pen text-[12px]"></i>
                                                 </button>
@@ -575,7 +578,7 @@
                         <!-- Clients TABLE View -->
                         <div v-if="clientView === 'table'" class="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden animate-fade-in">
                             <div class="overflow-x-auto">
-                                <table class="w-full text-left text-[13.5px]">
+                                <table class="w-full text-left text-[13.5px] lined-table">
                                     <thead>
                                         <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 text-[11px] font-bold uppercase tracking-wider">
                                             <th v-if="can('delete_client')" class="py-3 px-3 w-9"><input type="checkbox" :checked="filteredClients.length && selectedClientCount === filteredClients.length" @change="$event.target.checked ? selectAllClients() : clearClientSelection()"></th>
@@ -703,7 +706,7 @@
                         <!-- Services TABLE view -->
                         <div v-if="serviceView === 'table'" class="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden animate-fade-in">
                             <div class="overflow-x-auto">
-                                <table class="w-full text-left text-[13.5px]">
+                                <table class="w-full text-left text-[13.5px] lined-table">
                                     <thead>
                                         <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 text-[11px] font-bold uppercase tracking-wider">
                                             <th v-if="can('delete_service')" class="py-3 px-3 w-9"><input type="checkbox" :checked="services.length && selectedServiceCount === services.length" @change="$event.target.checked ? selectAllServices() : clearServiceSelection()"></th>
@@ -800,7 +803,7 @@
 
                         <!-- Staff Directory List -->
                         <div class="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden">
-                            <table class="w-full text-left border-collapse">
+                            <table class="w-full text-left border-collapse lined-table">
                                 <thead>
                                     <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 text-xs font-bold uppercase tracking-wider">
                                         <th class="py-3.5 px-6">Full Name</th>
@@ -935,7 +938,7 @@
                                         </div>
                                         <div v-if="day.description" class="px-4 py-2 text-[13px] text-gray-600 border-b border-gray-50"><i class="fa-solid fa-quote-left text-gray-300 mr-1.5 text-[11px]"></i>{{ day.description }}</div>
                                         <div class="overflow-x-auto">
-                                            <table class="w-full text-left text-[12.5px]">
+                                            <table class="w-full text-left text-[12.5px] lined-table">
                                                 <thead>
                                                     <tr class="bg-gray-50/60 text-gray-400 text-[11px] uppercase tracking-wide">
                                                         <th class="py-2 px-3">Task</th><th class="py-2 px-3">Status</th><th class="py-2 px-3">Start date</th><th class="py-2 px-3">Time today</th><th class="py-2 px-3">Total</th>
@@ -989,7 +992,7 @@
                         <!-- Activity Table -->
                         <div class="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden font-sans">
                             <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse">
+                                <table class="w-full text-left border-collapse lined-table">
                                     <thead>
                                         <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 text-xs font-bold uppercase tracking-wider">
                                             <th class="py-3.5 px-6">Timestamp</th>
@@ -1705,12 +1708,7 @@
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Entity Type</label>
                                 <select v-model="clientForm.entity_type" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm bg-white text-gray-750">
-                                    <option value="Proprietor">Proprietor</option>
-                                    <option value="Partnership">Partnership Firm</option>
-                                    <option value="LLP">LLP</option>
-                                    <option value="Pvt Ltd">Pvt Ltd Company</option>
-                                    <option value="HUF">HUF</option>
-                                    <option value="Individual">Individual (Salaried)</option>
+                                    <option v-for="et in ENTITY_TYPES" :key="et" :value="et">{{ et }}</option>
                                 </select>
                             </div>
                             <div>

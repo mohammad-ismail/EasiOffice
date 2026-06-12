@@ -71,7 +71,11 @@ def normalise_spec(spec):
         cols = []
         for c in columns:
             if isinstance(c, dict) and c.get("key") is not None:
-                cols.append({"key": str(c["key"]), "label": str(c.get("label") or c["key"])})
+                col = {"key": str(c["key"]), "label": str(c.get("label") or c["key"])}
+                # Optional dropdown list for this column (import templates).
+                if isinstance(c.get("options"), list) and c["options"]:
+                    col["options"] = [str(o) for o in c["options"]][:40]
+                cols.append(col)
         if not cols:
             # Fall back to keys discovered on the first row
             if rows and isinstance(rows[0], dict):
@@ -81,7 +85,7 @@ def normalise_spec(spec):
         sheets.append({"name": name, "columns": cols, "rows": rows})
     if not sheets:
         raise ExportError("Export spec produced no usable sheets.")
-    return {"title": title, "sheets": sheets}
+    return {"title": title, "sheets": sheets, "no_title": bool(spec.get("no_title"))}
 
 
 # --------------------------------------------------------------------------- #
@@ -91,8 +95,12 @@ def build_xlsx(spec):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
 
     spec = normalise_spec(spec)
+    # `no_title` (used by import templates) puts the column headers on row 1
+    # instead of a merged section-title banner on row 1 + headers on row 2.
+    no_title = bool(spec.get("no_title"))
     wb = Workbook()
     wb.remove(wb.active)  # drop the default empty sheet
 
@@ -122,13 +130,16 @@ def build_xlsx(spec):
         columns = sheet["columns"]
         ncols = len(columns)
 
-        # Row 1: section title spanning all columns
-        ws.cell(row=1, column=1, value=sheet["name"]).font = title_font
-        if ncols > 1:
-            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+        if no_title:
+            header_row = 1
+        else:
+            # Row 1: section title spanning all columns
+            ws.cell(row=1, column=1, value=sheet["name"]).font = title_font
+            if ncols > 1:
+                ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+            header_row = 2
 
-        # Row 2: column headers
-        header_row = 2
+        # Column headers
         for ci, col in enumerate(columns, start=1):
             cell = ws.cell(row=header_row, column=ci, value=col["label"])
             cell.fill = header_fill
@@ -151,6 +162,21 @@ def build_xlsx(spec):
 
         for ci, w in enumerate(widths, start=1):
             ws.column_dimensions[get_column_letter(ci)].width = min(max(w + 2, 10), 55)
+
+        # Per-column dropdown lists (e.g. Entity Type on the clients template).
+        # Applied to a generous range of data rows below the header.
+        first_data = header_row + 1
+        last_data = first_data + 500
+        for ci, col in enumerate(columns, start=1):
+            opts = col.get("options") if isinstance(col, dict) else None
+            if not opts:
+                continue
+            letter = get_column_letter(ci)
+            # Excel list validations are capped ~255 chars; keep the joined list short.
+            formula = '"' + ",".join(str(o).replace(",", " ") for o in opts) + '"'
+            dv = DataValidation(type="list", formula1=formula, allow_blank=True, showDropDown=False)
+            dv.add(f"{letter}{first_data}:{letter}{last_data}")
+            ws.add_data_validation(dv)
 
         ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
         if sheet["rows"]:

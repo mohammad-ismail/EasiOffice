@@ -58,6 +58,18 @@ select option:disabled {
     background-color: rgba(0, 0, 0, 0.02);
 }
 
+/* Vertical column separators for data tables (tasks, clients, services,
+   users, activity, timesheet). The universal border-radius:0 rule keeps
+   these crisp. */
+table.lined-table th,
+table.lined-table td {
+    border-right: 1px solid #ececec;
+}
+table.lined-table th:last-child,
+table.lined-table td:last-child {
+    border-right: none;
+}
+
 /* ============================================================
    Sharp corners — square everything (per design reference).
    Overrides every Tailwind rounded-* utility and component radius.

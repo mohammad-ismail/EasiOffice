@@ -235,6 +235,13 @@ createApp({
             est_minutes: 0
         });
 
+        // Canonical client entity types (mirrors backend importer.ENTITY_TYPES).
+        const ENTITY_TYPES = [
+            'Proprietor', 'Partnership Firm', 'LLP', 'Pvt Ltd Company', 'HUF',
+            'Individual (Salaried)', 'Public Ltd Company', 'Charitable Trust',
+            'Societies', 'Others'
+        ];
+
         const clientForm = ref({
             custom_id: '',
             name: '',
@@ -2756,6 +2763,7 @@ createApp({
             closeRecurringModal,
             updateRecurringTpl,
             freqLabel,
+            ENTITY_TYPES,
             openClientModal,
             startEditClient,
             closeClientModal,

@@ -81,7 +81,7 @@ def get_tasks_with_details(db):
     cursor = db.cursor()
     cursor.execute('''
         SELECT t.id, t.task_no, c.name as client_name, s.name as service_name, t.financial_year, t.period,
-               t.status, t.assigned_to, u.full_name as assigned_to_name, t.client_id, t.due_date,
+               t.status, t.assigned_to, u.full_name as assigned_to_name, t.client_id, t.service_id, t.due_date,
                t.delegated_to, d.full_name as delegated_to_name,
                t.billing_stage, t.billed_amount, t.gst_amount, t.total_amount,
                t.billed_date, t.received_date, t.estimated_minutes,

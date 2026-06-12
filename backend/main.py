@@ -930,14 +930,23 @@ def import_template(entity):
     fmt = (request.args.get('format') or 'csv').lower()
 
     sample = cfg.get('sample')
+
+    def _col(k, lbl, req):
+        c = {"key": k, "label": f"{lbl}{' *' if req else ''}"}
+        # Clients: Entity Type gets an in-cell dropdown of the canonical list.
+        if entity == 'clients' and k == 'entity_type':
+            c["options"] = importer.ENTITY_TYPES
+        return c
+
     if fmt in ('xlsx', 'excel'):
         spec = {
+            # Header-only template: no merged title banner on row 1 (per request),
+            # so column headers land on row 1 ready to fill from row 2.
+            "no_title": True,
             "title": f"{cfg['label']} Import Template",
             "sheets": [{
                 "name": cfg['label'],
-                "columns": [{"key": k, "label": f"{lbl}{' *' if req else ''}"} for k, lbl, req in cols],
-                # Header-only template by default. If a sample is configured for
-                # the entity, include it so users see the expected shape.
+                "columns": [_col(k, lbl, req) for k, lbl, req in cols],
                 "rows": [sample] if sample else [],
             }],
         }

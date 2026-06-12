@@ -259,6 +259,7 @@ def handle_login():
             session['role'] = user['role']
             session['full_name'] = user['full_name']
 
+            crud.start_session(db, user['id'])
             crud.log_user_action(db, user['username'], "User Login",
                                  f"Authenticated successfully: {user['full_name']} ({user['role']})")
             db.close()
@@ -280,8 +281,31 @@ def handle_login():
 
 @app.route('/api/logout', methods=['POST'])
 def handle_logout():
+    uid = session.get('user_id')
+    if uid:
+        db = get_db()
+        crud.end_session(db, uid)
+        db.close()
     session.clear()
     return jsonify({"status": "success"})
+
+
+@app.route('/api/heartbeat', methods=['POST'])
+@login_required
+def heartbeat():
+    db = get_db()
+    crud.touch_session(db, session.get('user_id'))
+    db.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route('/api/presence', methods=['GET'])
+@login_required
+def presence():
+    db = get_db()
+    data = crud.get_presence(db)
+    db.close()
+    return jsonify(data)
 
 
 @app.route('/api/me', methods=['GET'])

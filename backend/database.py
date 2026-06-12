@@ -248,6 +248,20 @@ def init_db():
     )
     ''')
 
+    # Auto-migration: login sessions (who's online + daily logged-in time).
+    # A heartbeat keeps last_seen fresh; a stale last_seen means the user closed
+    # the app without logging out.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS user_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        login_at TEXT,
+        last_seen TEXT,
+        logout_at TEXT,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )
+    ''')
+
     conn.commit()
     conn.close()
 

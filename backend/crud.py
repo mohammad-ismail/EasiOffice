@@ -660,3 +660,83 @@ def timer_reset(db, task_id):
     db.commit()
     return True
 
+# --- Login sessions & presence -----------------------------------------------
+def _now_str():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def start_session(db, user_id):
+    """Open a fresh session, closing any still-open one for this user."""
+    now = _now_str()
+    cur = db.cursor()
+    cur.execute("UPDATE user_sessions SET logout_at = last_seen WHERE user_id = ? AND logout_at IS NULL", (user_id,))
+    cur.execute("INSERT INTO user_sessions (user_id, login_at, last_seen, logout_at) VALUES (?, ?, ?, NULL)",
+                (user_id, now, now))
+    db.commit()
+
+def touch_session(db, user_id):
+    """Heartbeat: refresh last_seen on the user's open session (or open one)."""
+    now = _now_str()
+    cur = db.cursor()
+    cur.execute("SELECT id FROM user_sessions WHERE user_id = ? AND logout_at IS NULL ORDER BY id DESC LIMIT 1", (user_id,))
+    row = cur.fetchone()
+    if row:
+        cur.execute("UPDATE user_sessions SET last_seen = ? WHERE id = ?", (now, row['id']))
+    else:
+        cur.execute("INSERT INTO user_sessions (user_id, login_at, last_seen, logout_at) VALUES (?, ?, ?, NULL)",
+                    (user_id, now, now))
+    db.commit()
+
+def end_session(db, user_id):
+    now = _now_str()
+    cur = db.cursor()
+    cur.execute("UPDATE user_sessions SET logout_at = ?, last_seen = ? WHERE user_id = ? AND logout_at IS NULL",
+                (now, now, user_id))
+    db.commit()
+
+def get_presence(db, window_seconds=150):
+    """Per user: online (open session + recent heartbeat) and working (running timer)."""
+    cur = db.cursor()
+    cur.execute('''
+        SELECT u.id, u.full_name, u.role,
+               (SELECT s.last_seen FROM user_sessions s WHERE s.user_id = u.id ORDER BY s.id DESC LIMIT 1) AS last_seen,
+               (SELECT s.logout_at FROM user_sessions s WHERE s.user_id = u.id ORDER BY s.id DESC LIMIT 1) AS logout_at,
+               (SELECT COUNT(*) FROM task_timers t WHERE t.user_id = u.id AND t.running_since IS NOT NULL) AS running
+        FROM users u
+        ORDER BY u.full_name
+    ''')
+    now = datetime.now()
+    out = []
+    for r in cur.fetchall():
+        online = False
+        if r['logout_at'] is None and r['last_seen']:
+            try:
+                online = (now - datetime.strptime(r['last_seen'], "%Y-%m-%d %H:%M:%S")).total_seconds() <= window_seconds
+            except ValueError:
+                online = False
+        out.append({"user_id": r['id'], "full_name": r['full_name'], "role": r['role'],
+                    "online": online, "working": bool(r['running']), "last_seen": r['last_seen']})
+    return out
+
+def daily_logged_in_seconds(db, user_id, date_str):
+    """Seconds the user was logged in on date_str (sum of sessions), with first
+    login + last logout times for display."""
+    cur = db.cursor()
+    cur.execute("SELECT login_at, last_seen, logout_at FROM user_sessions "
+                "WHERE user_id = ? AND substr(login_at, 1, 10) = ? ORDER BY id", (user_id, date_str))
+    total, first_login, last_out = 0, None, None
+    for r in cur.fetchall():
+        try:
+            start = datetime.strptime(r['login_at'], "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            continue
+        end_str = r['logout_at'] or r['last_seen'] or r['login_at']
+        try:
+            end = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            end = start
+        total += max(0, int((end - start).total_seconds()))
+        if first_login is None:
+            first_login = r['login_at']
+        last_out = end_str
+    return {"seconds": total, "first_login": first_login, "last_logout": last_out}
+

@@ -602,10 +602,25 @@ createApp({
                 timesheets.value = await timesheetsRes.json();
                 activityLogs.value = await logsRes.json();
                 await fetchTimers();
+                await fetchPresence();
             } catch (error) {
                 console.error("Error loading firm data:", error);
             }
         };
+
+        // ===================== Presence (who's online / working) =====================
+        const presence = ref([]);
+        const fetchPresence = async () => {
+            try {
+                const res = await apiFetch('/api/presence');
+                if (res.ok) presence.value = await res.json();
+            } catch (e) { /* ignore */ }
+        };
+        const sendHeartbeat = async () => {
+            if (!isLoggedIn.value) return;
+            try { await apiFetch('/api/heartbeat', { method: 'POST' }); } catch (e) { /* ignore */ }
+        };
+        const onlineUsers = computed(() => presence.value.filter(p => p.online));
 
         // Authentication Handlers
         const handleLogin = async () => {
@@ -2027,6 +2042,9 @@ createApp({
         onMounted(async () => {
             // Live-tick running timers every second
             timerInterval = setInterval(() => { tick.value++; }, 1000);
+            // Presence: heartbeat keeps "online" fresh; poll presence for the dashboard.
+            setInterval(sendHeartbeat, 45000);
+            setInterval(() => { if (isLoggedIn.value) fetchPresence(); }, 30000);
 
             const savedPalette = localStorage.getItem('ca_palette');
             if (savedPalette && palettes[savedPalette]) {
@@ -2103,6 +2121,8 @@ createApp({
             dashCard,
             setDashCard,
             dashTasksByUser,
+            presence,
+            onlineUsers,
             // Kanban board + drag & drop
             boardColumns,
             columnKeyOf,

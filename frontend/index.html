@@ -232,6 +232,24 @@
                             </button>
                         </div>
 
+                        <!-- Team status — who's online / working -->
+                        <div class="app-card p-5">
+                            <h3 class="text-[16px] font-semibold text-gray-800 flex items-center gap-2 mb-4"><i class="fa-solid fa-users text-accent"></i> Team status <span class="text-[12px] font-normal text-gray-400">· {{ onlineUsers.length }} online</span></h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                                <div v-for="p in presence" :key="p.user_id" class="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-gray-100" :class="p.online ? 'bg-emerald-50/40' : 'bg-gray-50/40'">
+                                    <span class="w-2.5 h-2.5 rounded-full shrink-0" :class="p.online ? 'bg-emerald-500' : 'bg-gray-300'"></span>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="text-[13.5px] font-semibold text-gray-800 truncate">{{ p.full_name }}</div>
+                                        <div class="text-[11px] text-gray-400">{{ p.role }}</div>
+                                    </div>
+                                    <span v-if="p.working" class="pill pill-working text-[11px] shrink-0"><i class="fa-solid fa-stopwatch mr-1"></i>Working</span>
+                                    <span v-else-if="p.online" class="text-[11px] text-emerald-600 font-semibold shrink-0">Online</span>
+                                    <span v-else class="text-[11px] text-gray-400 shrink-0">Offline</span>
+                                </div>
+                                <div v-if="!presence.length" class="col-span-full text-center py-6 text-[13px] text-gray-400 italic">No staff yet.</div>
+                            </div>
+                        </div>
+
                         <!-- Selected card: tasks grouped by staff -->
                         <div v-if="dashCard" class="app-card p-5 animate-fade-in">
                             <div class="flex items-center justify-between mb-4">

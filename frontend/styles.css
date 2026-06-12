@@ -63,6 +63,14 @@ select option:disabled {
     background-color: rgba(0, 0, 0, 0.02);
 }
 
+/* Row equivalent of .self-assigned-unlocked in the tasks table view. */
+tr.self-assigned-row {
+    background-color: rgba(59, 130, 246, 0.06);
+    box-shadow: inset 3px 0 0 #3B82F6, inset -3px 0 0 #3B82F6;
+}
+tr.self-assigned-row td:first-child { border-left: 2px dashed #3B82F6; }
+tr.self-assigned-row td:last-child  { border-right: 2px dashed #3B82F6; }
+
 /* ============================================================
    Sharp corners — square everything (per design reference).
    Overrides every Tailwind rounded-* utility and component radius.

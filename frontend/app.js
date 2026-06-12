@@ -781,9 +781,14 @@ createApp({
 
         // ===================== Task lock =====================
         const canLockTasks = computed(() => ['Admin', 'Partner', 'Manager'].includes(currentUser.value.role));
-        // A task is self-assigned & unlocked: rendered with the blue dotted style.
-        const isSelfAssignedUnlocked = (t) =>
-            !!(t && !t.locked && t.created_by && t.assigned_to && t.created_by === t.assigned_to);
+        // A task carries the blue-dotted style while it was created by an Employee
+        // and an Admin / Partner / Manager hasn't reviewed-and-locked it yet.
+        const isSelfCreatedUnlocked = (t) => {
+            if (!t || t.locked) return false;
+            if (!t.created_by) return false;
+            const creator = usersList.value.find(u => u.id === t.created_by);
+            return !!(creator && creator.role === 'Employee');
+        };
         // Whether the current user is allowed to edit a task's details right now.
         const canEditTask = (t) => {
             if (!can('create_task')) return false;
@@ -801,6 +806,36 @@ createApp({
                 if (res.ok) { task.locked = newLocked ? 1 : 0; }
                 else { alert(data.message || 'Could not change lock state.'); }
             } catch (e) { console.error('lock toggle', e); }
+        };
+
+        // Lock a task straight from a notification (Admin/Partner/Manager only),
+        // then open the task for editing.
+        const lockTaskFromNotification = async (n) => {
+            if (!n.task_id) return;
+            try {
+                const res = await apiFetch(`/api/tasks/${n.task_id}/lock`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ locked: true })
+                });
+                if (!res.ok) {
+                    const e = await res.json().catch(() => ({}));
+                    alert(e.message || 'Could not lock task.'); return;
+                }
+                await markNotifRead(n);
+                await fetchData();
+                // Open the edit modal on the now-locked task so the supervisor can adjust details.
+                const t = tasks.value.find(x => x.id === n.task_id);
+                if (t) { startEditTask(t); }
+                else { currentTab.value = 'tasks'; }
+            } catch (e) { console.error('lock from notif', e); }
+        };
+
+        // Whether a notification's underlying task is currently locked (so we can
+        // hide the Lock button once the action has been taken).
+        const notifTaskLocked = (n) => {
+            if (!n || !n.task_id) return false;
+            const t = tasks.value.find(x => x.id === n.task_id);
+            return !!(t && t.locked);
         };
 
         // ===================== Presence (who's online / working) =====================
@@ -1964,10 +1999,27 @@ createApp({
         };
         const drillMinFmt = (m) => fmtDur(Math.floor(m / 60), m % 60);
 
-        // ===================== Client / service dual-view toggle =====================
-        // Table view by default per user preference; can toggle to cards.
+        // ===================== Client / service / tasks dual-view toggle =====================
+        // Table view by default per user preference; can toggle to cards / kanban.
         const clientView = ref('table');   // 'table' | 'grid'
         const serviceView = ref('table');
+        const taskView = ref('table');     // 'table' | 'kanban'
+
+        // Flat task list for the table view: same scope as the kanban (visible,
+        // non-billed) but ordered by due date and search-filtered.
+        const tableTasks = computed(() => {
+            const q = (taskSearch.value || '').trim().toLowerCase();
+            let list = activeTasks.value;
+            if (q) list = list.filter(t =>
+                (t.client_name || '').toLowerCase().includes(q) ||
+                (t.service_name || '').toLowerCase().includes(q));
+            return list.slice().sort((a, b) => {
+                const da = a.due_date || '9999-12-31';
+                const db = b.due_date || '9999-12-31';
+                if (da !== db) return da < db ? -1 : 1;
+                return (a.id || 0) - (b.id || 0);
+            });
+        });
 
         // ===================== Persistent task timers =====================
         // One timer runs per user; starting another pauses (banks) the previous one,
@@ -2864,9 +2916,13 @@ createApp({
             openNotificationTask,
             notifIcon,
             canLockTasks,
-            isSelfAssignedUnlocked,
+            isSelfCreatedUnlocked,
             canEditTask,
             toggleTaskLock,
+            lockTaskFromNotification,
+            notifTaskLocked,
+            taskView,
+            tableTasks,
             // Calendar
             calMonth,
             calMonthLabel,

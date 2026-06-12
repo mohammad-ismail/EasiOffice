@@ -310,7 +310,15 @@
                             </div>
                             
                             <!-- Action Buttons: create client / single task rights conditionally visible to Admin only -->
-                            <div class="flex items-center gap-2 w-full md:w-auto justify-end">
+                            <div class="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
+                                <div class="inline-flex rounded-xl border border-gray-200 overflow-hidden shrink-0">
+                                    <button @click="taskView='table'" class="px-3 py-2 text-[13px] font-semibold transition"
+                                            :class="taskView==='table' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                                            title="Table view"><i class="fa-solid fa-table-list"></i></button>
+                                    <button @click="taskView='kanban'" class="px-3 py-2 text-[13px] font-semibold transition"
+                                            :class="taskView==='kanban' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                                            title="Card / Kanban view"><i class="fa-solid fa-grip"></i></button>
+                                </div>
                                 <button @click="openExportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
                                     <i class="fa-solid fa-file-export"></i> Export
                                 </button>
@@ -365,8 +373,60 @@
                             </div>
                         </div>
 
+                        <!-- TABLE VIEW (default) -->
+                        <div v-if="taskView === 'table'" class="bg-white rounded-2xl shadow-sm border border-gray-150 flex-1 min-h-0 overflow-hidden flex flex-col">
+                            <div class="overflow-auto">
+                                <table class="w-full text-left text-[13.5px]">
+                                    <thead class="bg-gray-50 border-b border-gray-100 text-gray-500 text-[11px] font-bold uppercase tracking-wider sticky top-0 z-10">
+                                        <tr>
+                                            <th class="py-3 px-3 whitespace-nowrap">Task ID</th>
+                                            <th class="py-3 px-3">Client</th>
+                                            <th class="py-3 px-3">Service</th>
+                                            <th class="py-3 px-3">Period</th>
+                                            <th class="py-3 px-3 whitespace-nowrap">Due Date</th>
+                                            <th class="py-3 px-3">Status</th>
+                                            <th class="py-3 px-3">Assigned</th>
+                                            <th class="py-3 px-3">Delegated</th>
+                                            <th class="py-3 px-3 text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-50">
+                                        <tr v-for="task in tableTasks" :key="task.id" class="hover:bg-gray-50/50"
+                                            :class="{ 'self-assigned-row': isSelfCreatedUnlocked(task), 'opacity-90': !!task.locked }">
+                                            <td class="py-2.5 px-3 font-mono text-[12.5px] text-gray-500 whitespace-nowrap">
+                                                <i v-if="task.locked" class="fa-solid fa-lock text-gray-500 mr-1" title="Locked"></i>
+                                                {{ taskSerial(task) }}
+                                            </td>
+                                            <td class="py-2.5 px-3 font-semibold text-gray-800">{{ task.client_name }}</td>
+                                            <td class="py-2.5 px-3 text-gray-700">{{ task.service_name }}</td>
+                                            <td class="py-2.5 px-3 text-gray-500">{{ task.period }}</td>
+                                            <td class="py-2.5 px-3 font-mono text-gray-500">{{ task.due_date || '—' }}</td>
+                                            <td class="py-2.5 px-3">
+                                                <span class="px-2 py-0.5 rounded-md text-[11.5px] font-semibold border"
+                                                      :class="{
+                                                        'bg-blue-50 text-blue-700 border-blue-150': task.status === 'Working',
+                                                        'bg-amber-50 text-amber-700 border-amber-150': task.status === 'Pending',
+                                                        'bg-emerald-50 text-emerald-700 border-emerald-150': task.status === 'Completed'
+                                                      }">{{ task.status }}</span>
+                                            </td>
+                                            <td class="py-2.5 px-3 text-gray-600">{{ task.assigned_to_name || 'Unassigned' }}</td>
+                                            <td class="py-2.5 px-3 text-gray-600">{{ task.delegated_to_name || '—' }}</td>
+                                            <td class="py-2.5 px-3 text-right whitespace-nowrap">
+                                                <button v-if="!isTaskRunning(task.id) && task.assigned_to && task.status !== 'Completed'" @click="startTaskTimer(task)" class="text-accent hover:bg-accent-light p-1.5 rounded-lg" title="Start timer"><i class="fa-solid fa-play text-[11px]"></i></button>
+                                                <button v-else-if="isTaskRunning(task.id)" @click="pauseTaskTimer(task)" class="text-white p-1.5 rounded-lg" style="background: var(--color-stuck);" title="Pause timer"><i class="fa-solid fa-pause text-[11px]"></i></button>
+                                                <button v-if="canLockTasks" @click="toggleTaskLock(task)" class="text-gray-500 hover:text-amber-600 hover:bg-amber-50 p-1.5 rounded-lg" :title="task.locked ? 'Unlock task' : 'Lock task'"><i class="fa-solid text-[11px]" :class="task.locked ? 'fa-lock-open' : 'fa-lock'"></i></button>
+                                                <button v-if="canEditTask(task)" @click="startEditTask(task)" class="text-gray-500 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg" title="Edit"><i class="fa-solid fa-pen text-[11px]"></i></button>
+                                                <button v-if="can('delete_task')" @click="deleteTask(task)" class="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg" title="Delete"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="tableTasks.length === 0"><td colspan="9" class="py-14 text-center text-gray-400 italic">No tasks match the current filter.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
                         <!-- Kanban Board (Unassigned · Pending · Working · Completed) -->
-                        <div class="flex gap-4 flex-1 min-h-0 overflow-x-auto pb-2">
+                        <div v-if="taskView === 'kanban'" class="flex gap-4 flex-1 min-h-0 overflow-x-auto pb-2">
                             <div v-for="col in boardColumns" :key="col.key"
                                  class="kanban-col flex flex-col flex-1 min-w-[270px]"
                                  :class="{ 'drag-over': dragOverColumn === col.key }"
@@ -386,7 +446,7 @@
                                 <div class="flex-1 overflow-y-auto px-2.5 pb-2.5 space-y-2.5">
                                     <div v-for="task in col.tasks" :key="task.id"
                                          class="kanban-card p-2.5"
-                                         :class="['rail-' + col.key.toLowerCase(), { dragging: draggedTaskId === task.id, 'self-assigned-unlocked': isSelfAssignedUnlocked(task), 'locked-task': !!task.locked }]"
+                                         :class="['rail-' + col.key.toLowerCase(), { dragging: draggedTaskId === task.id, 'self-assigned-unlocked': isSelfCreatedUnlocked(task), 'locked-task': !!task.locked }]"
                                          draggable="true"
                                          @dragstart="onTaskDragStart(task, $event)"
                                          @dragend="onTaskDragEnd">
@@ -1347,6 +1407,17 @@
                                     <div class="text-[14px] text-gray-800 leading-snug" :class="n.read_at ? 'font-normal' : 'font-semibold'">{{ n.message }}</div>
                                     <div class="text-[11.5px] text-gray-400 mt-0.5"><i class="fa-regular fa-clock mr-1"></i>{{ n.created_at }}</div>
                                 </div>
+                                <!-- Quick-action: lock the task & open it for editing (Admin/Partner/Manager
+                                     on Employee-created task notifications, while the task isn't already locked). -->
+                                <button v-if="canLockTasks && n.type === 'self_task_created' && n.task_id && !notifTaskLocked(n)"
+                                        @click.stop="lockTaskFromNotification(n)"
+                                        class="shrink-0 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold bg-amber-500 hover:bg-amber-600 text-white inline-flex items-center gap-1.5 transition"
+                                        title="Lock this task and open it for editing">
+                                    <i class="fa-solid fa-lock text-[10px]"></i> Lock
+                                </button>
+                                <span v-else-if="canLockTasks && n.type === 'self_task_created' && notifTaskLocked(n)" class="shrink-0 text-[11.5px] font-semibold text-gray-400 inline-flex items-center gap-1">
+                                    <i class="fa-solid fa-lock text-[10px]"></i> Locked
+                                </span>
                                 <span v-if="!n.read_at" class="w-2 h-2 rounded-full bg-red-500 shrink-0 mt-2"></span>
                             </div>
                             <div v-if="!notifications.length" class="px-4 py-14 text-center text-gray-400 italic">No notifications yet.</div>

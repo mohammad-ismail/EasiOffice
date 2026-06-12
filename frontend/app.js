@@ -1766,6 +1766,63 @@ createApp({
         const exportSheets = ref([]);            // [{name,columns,rowsFn,selected}] (report mode)
         let exportRowsFn = null;                 // () => rows (section mode; kept non-reactive)
 
+        // Export period filter (applied to a section's date column when it has one).
+        const expDateField = ref(null);          // e.g. 'due_date' / 'timestamp' / null
+        const exportPeriod = ref('all');         // all|range|weekly|monthly|quarterly|halfyearly|yearly
+        const expFrom = ref(today);
+        const expTo = ref(today);
+        const expWeekDate = ref(today);
+        const expMonth = ref(today.slice(0, 7));
+        const expMonthCount = ref(1);
+        const expYear = ref(String(new Date().getFullYear()));
+        const expYearCount = ref(1);
+        const expQuarter = ref('Q' + (Math.floor(new Date().getMonth() / 3) + 1));
+        const expHalf = ref(new Date().getMonth() < 6 ? 'H1' : 'H2');
+        const exportRange = computed(() => {
+            const p = exportPeriod.value;
+            if (p === 'weekly') {
+                const a = new Date(expWeekDate.value + 'T00:00:00');
+                const dow = (a.getDay() + 6) % 7;
+                const mon = new Date(a); mon.setDate(a.getDate() - dow);
+                const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+                const f = (d) => _iso(d.getFullYear(), d.getMonth() + 1, d.getDate());
+                return { from: f(mon), to: f(sun) };
+            }
+            if (p === 'monthly') {
+                const [y, m] = expMonth.value.split('-').map(Number);
+                const count = Math.max(1, Number(expMonthCount.value) || 1);
+                let sy = y, sm = m - (count - 1); while (sm < 1) { sm += 12; sy--; }
+                return { from: _iso(sy, sm, 1), to: _iso(y, m, _lastDay(y, m)) };
+            }
+            if (p === 'quarterly') {
+                const y = Number(expYear.value); const q = Number(expQuarter.value.slice(1));
+                const sm = (q - 1) * 3 + 1; const em = sm + 2;
+                return { from: _iso(y, sm, 1), to: _iso(y, em, _lastDay(y, em)) };
+            }
+            if (p === 'halfyearly') {
+                const y = Number(expYear.value); const h = Number(expHalf.value.slice(1));
+                const sm = h === 1 ? 1 : 7; const em = h === 1 ? 6 : 12;
+                return { from: _iso(y, sm, 1), to: _iso(y, em, _lastDay(y, em)) };
+            }
+            if (p === 'yearly') {
+                const y = Number(expYear.value); const count = Math.max(1, Number(expYearCount.value) || 1);
+                return { from: _iso(y - (count - 1), 1, 1), to: _iso(y, 12, 31) };
+            }
+            if (p === 'range') return { from: expFrom.value, to: expTo.value };
+            return null;   // 'all' → no filter
+        });
+        const applyExportPeriod = (rows) => {
+            if (!expDateField.value || exportPeriod.value === 'all') return rows;
+            const r = exportRange.value;
+            if (!r || !r.from || !r.to) return rows;
+            return rows.filter(row => {
+                const v = row[expDateField.value];
+                if (!v) return false;
+                const d = String(v).slice(0, 10);
+                return d >= r.from && d <= r.to;
+            });
+        };
+
         const triggerDownload = (blob, filename) => {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -1855,7 +1912,7 @@ createApp({
             switch (key) {
                 case 'tasks':
                     return {
-                        title: 'Tasks', mode: 'section', columns: TASK_COLS,
+                        title: 'Tasks', mode: 'section', columns: TASK_COLS, dateField: 'due_date',
                         rowsFn: () => filteredTasks.value.map(taskRow),
                         filters: [{
                             key: 'status', label: 'Status',
@@ -1902,7 +1959,7 @@ createApp({
                     };
                 case 'activity':
                     return {
-                        title: 'Activity Log', mode: 'section',
+                        title: 'Activity Log', mode: 'section', dateField: 'timestamp',
                         columns: [{ key: 'id', label: 'Log ID' }, { key: 'timestamp', label: 'Timestamp' },
                                   { key: 'username', label: 'User' }, { key: 'action', label: 'Action' },
                                   { key: 'details', label: 'Details' }],
@@ -1985,6 +2042,7 @@ createApp({
                     const src = isRec ? receivedTasks : billedTasks;
                     return {
                         title: isRec ? 'Received Fees' : 'Billed', mode: 'section', columns: cols,
+                        dateField: isRec ? 'received_date' : 'billed_date',
                         rowsFn: () => src.value.map(t => ({ ...t, task_serial: taskSerial(t) })), filters: []
                     };
                 }
@@ -1998,6 +2056,8 @@ createApp({
             exportTitle.value = cfg.title;
             exportFormat.value = 'xlsx';
             exportMode.value = cfg.mode;
+            expDateField.value = cfg.dateField || null;
+            exportPeriod.value = 'all';
             if (cfg.mode === 'report') {
                 exportSheets.value = cfg.sheets.map(s => ({ name: s.name, columns: s.columns, rowsFn: s.rowsFn, selected: true }));
                 exportColumns.value = [];
@@ -2030,6 +2090,7 @@ createApp({
                 exportFilters.value.forEach(f => {
                     if (f.value !== ALL) rows = rows.filter(r => f.match(r, f.value));
                 });
+                rows = applyExportPeriod(rows);
                 spec = { title: exportTitle.value, sheets: [{ name: exportTitle.value, columns: cols, rows }] };
             }
             const ok = await downloadExport(spec, exportFormat.value);
@@ -2444,6 +2505,17 @@ createApp({
             exportFieldSel,
             exportFilters,
             exportSheets,
+            expDateField,
+            exportPeriod,
+            expFrom,
+            expTo,
+            expWeekDate,
+            expMonth,
+            expMonthCount,
+            expYear,
+            expYearCount,
+            expQuarter,
+            expHalf,
             openExportModal,
             closeExportModal,
             confirmExport,

@@ -1695,6 +1695,43 @@
                             </div>
                         </div>
 
+                        <!-- Section mode: time period (when the data has a date) -->
+                        <div v-if="exportMode==='section' && expDateField" class="space-y-2">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider">Time period</label>
+                            <div class="flex flex-wrap items-end gap-2">
+                                <select v-model="exportPeriod" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white">
+                                    <option value="all">All time</option>
+                                    <option value="range">Custom days</option>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="monthly">Monthly</option>
+                                    <option value="quarterly">Quarterly</option>
+                                    <option value="halfyearly">Half-yearly</option>
+                                    <option value="yearly">Yearly</option>
+                                </select>
+                                <template v-if="exportPeriod==='range'">
+                                    <input v-model="expFrom" type="date" class="rounded-xl border border-gray-200 p-2 text-[13.5px]">
+                                    <input v-model="expTo" type="date" class="rounded-xl border border-gray-200 p-2 text-[13.5px]">
+                                </template>
+                                <input v-if="exportPeriod==='weekly'" v-model="expWeekDate" type="date" class="rounded-xl border border-gray-200 p-2 text-[13.5px]">
+                                <template v-if="exportPeriod==='monthly'">
+                                    <input v-model="expMonth" type="month" class="rounded-xl border border-gray-200 p-2 text-[13.5px]">
+                                    <input v-model.number="expMonthCount" type="number" min="1" max="36" title="number of months" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-20">
+                                </template>
+                                <template v-if="exportPeriod==='quarterly'">
+                                    <select v-model="expQuarter" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white"><option value="Q1">Q1 (Jan–Mar)</option><option value="Q2">Q2 (Apr–Jun)</option><option value="Q3">Q3 (Jul–Sep)</option><option value="Q4">Q4 (Oct–Dec)</option></select>
+                                    <input v-model="expYear" type="number" min="2000" max="2099" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-24">
+                                </template>
+                                <template v-if="exportPeriod==='halfyearly'">
+                                    <select v-model="expHalf" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white"><option value="H1">H1 (Jan–Jun)</option><option value="H2">H2 (Jul–Dec)</option></select>
+                                    <input v-model="expYear" type="number" min="2000" max="2099" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-24">
+                                </template>
+                                <template v-if="exportPeriod==='yearly'">
+                                    <input v-model="expYear" type="number" min="2000" max="2099" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-24">
+                                    <input v-model.number="expYearCount" type="number" min="1" max="10" title="number of years" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-20">
+                                </template>
+                            </div>
+                        </div>
+
                         <!-- Report mode: section selection -->
                         <div v-if="exportMode==='report'">
                             <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Sections to include</label>

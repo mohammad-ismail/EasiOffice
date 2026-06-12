@@ -1,4 +1,4 @@
-const { createApp, ref, computed, onMounted, watch } = Vue;
+const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
 
 createApp({
     setup() {
@@ -1165,6 +1165,68 @@ createApp({
                 const lines = failures.slice(0, 8).map(f => `• ID ${f.id}: ${f.msg}`).join('\n');
                 alert(`Deleted ${ok} service(s); ${failures.length} could not be deleted:\n${lines}`);
             }
+        };
+
+        // ===================== Reusable multi-select for bulk delete =====================
+        // Sets aren't deeply reactive, so a `tick` counter bumps on every mutation
+        // to force recomputation. Returned as a reactive object so nested refs
+        // (count) auto-unwrap in templates.
+        const makeSelection = () => {
+            const ids = ref(new Set());
+            const tick = ref(0);
+            return reactive({
+                has: (id) => { void tick.value; return ids.value.has(id); },
+                toggle: (id) => { const s = ids.value; s.has(id) ? s.delete(id) : s.add(id); tick.value++; },
+                selectAll: (arr) => { ids.value = new Set(arr); tick.value++; },
+                clear: () => { ids.value = new Set(); tick.value++; },
+                values: () => Array.from(ids.value),
+                count: computed(() => { void tick.value; return ids.value.size; }),
+            });
+        };
+
+        const taskSel = makeSelection();
+        const billedSel = makeSelection();
+        const receivedSel = makeSelection();
+        const notifSel = makeSelection();
+        const logSel = makeSelection();
+
+        // Generic bulk-delete runner: DELETE each selected id, report failures.
+        const _bulkDelete = async (sel, urlFor, label, refresh) => {
+            const ids = sel.values();
+            if (!ids.length) return;
+            if (!confirm(`Delete ${ids.length} selected ${label}? This cannot be undone.`)) return;
+            let ok = 0; const failures = [];
+            for (const id of ids) {
+                try {
+                    const res = await apiFetch(urlFor(id), { method: 'DELETE' });
+                    if (res.ok) ok++;
+                    else { const d = await res.json().catch(() => ({})); failures.push(`ID ${id}: ${d.message || 'failed'}`); }
+                } catch (e) { failures.push(`ID ${id}: network error`); }
+            }
+            sel.clear();
+            if (refresh) await refresh();
+            if (failures.length) alert(`Deleted ${ok} ${label}; ${failures.length} could not be deleted:\n• ` + failures.slice(0, 8).join('\n• '));
+        };
+
+        const bulkDeleteTasks    = () => _bulkDelete(taskSel,     id => `/api/tasks/${id}`,        'task(s)',         fetchData);
+        const bulkDeleteBilled   = () => _bulkDelete(billedSel,   id => `/api/tasks/${id}`,        'billed task(s)',  fetchData);
+        const bulkDeleteReceived = () => _bulkDelete(receivedSel, id => `/api/tasks/${id}`,        'received task(s)', fetchData);
+        const bulkDeleteNotifs   = () => _bulkDelete(notifSel,    id => `/api/notifications/${id}`, 'notification(s)', fetchNotifications);
+        const bulkDeleteLogs     = () => _bulkDelete(logSel,      id => `/api/timesheets/${id}`,    'time log(s)',     fetchData);
+
+        // Single-item deletes used by the per-row trash buttons.
+        const deleteNotification = async (n) => {
+            if (!confirm('Delete this notification?')) return;
+            try { const res = await apiFetch(`/api/notifications/${n.id}`, { method: 'DELETE' }); if (res.ok) await fetchNotifications(); }
+            catch (e) { console.error('delete notif', e); }
+        };
+        const deleteTimesheetLog = async (log) => {
+            if (!confirm('Delete this time log entry? This cannot be undone.')) return;
+            try {
+                const res = await apiFetch(`/api/timesheets/${log.id}`, { method: 'DELETE' });
+                const d = await res.json().catch(() => ({}));
+                if (res.ok) await fetchData(); else alert(d.message || 'Could not delete entry.');
+            } catch (e) { console.error('delete timesheet', e); }
         };
 
         // Delete a client (admin/partner / delete_client permission). Backend enforces
@@ -2919,6 +2981,19 @@ createApp({
             selectedServiceCount,
             bulkDeleteSelectedClients,
             bulkDeleteSelectedServices,
+            // Bulk delete for tasks / billed / received / notifications / report logs
+            taskSel,
+            billedSel,
+            receivedSel,
+            notifSel,
+            logSel,
+            bulkDeleteTasks,
+            bulkDeleteBilled,
+            bulkDeleteReceived,
+            bulkDeleteNotifs,
+            bulkDeleteLogs,
+            deleteNotification,
+            deleteTimesheetLog,
             // Notifications + task lock
             notifications,
             unreadNotifications,

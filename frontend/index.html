@@ -319,6 +319,18 @@
                                             :class="taskView==='kanban' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
                                             title="Card / Kanban view"><i class="fa-solid fa-grip"></i></button>
                                 </div>
+                                <details v-if="can('delete_task') && taskView==='table'" class="relative">
+                                    <summary class="list-none cursor-pointer px-4 py-2 text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl flex items-center gap-1.5 shadow-sm">
+                                        <i class="fa-solid fa-trash-can"></i> Delete <span v-if="taskSel.count" class="text-[11px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ taskSel.count }}</span>
+                                        <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                                    </summary>
+                                    <div class="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
+                                        <button @click="taskSel.selectAll(tableTasks.map(t=>t.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ tableTasks.length }})</button>
+                                        <button @click="taskSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
+                                        <div class="border-t border-gray-100 my-1"></div>
+                                        <button @click="bulkDeleteTasks()" :disabled="!taskSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ taskSel.count }})</button>
+                                    </div>
+                                </details>
                                 <button @click="openExportModal('tasks')" class="px-4 py-2 text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition flex items-center gap-1.5 shadow-sm">
                                     <i class="fa-solid fa-file-export"></i> Export
                                 </button>
@@ -378,12 +390,14 @@
                             <div class="overflow-y-auto">
                                 <table class="w-full table-fixed text-left text-[13px] lined-table">
                                     <colgroup>
-                                        <col style="width:8%"><col style="width:19%"><col style="width:15%">
-                                        <col style="width:8%"><col style="width:10%"><col style="width:15%">
-                                        <col style="width:13%"><col style="width:12%">
+                                        <col v-if="can('delete_task')" style="width:4%">
+                                        <col style="width:8%"><col style="width:18%"><col style="width:14%">
+                                        <col style="width:8%"><col style="width:10%"><col style="width:14%">
+                                        <col style="width:12%"><col style="width:12%">
                                     </colgroup>
                                     <thead class="bg-gray-50 border-b border-gray-100 text-gray-500 text-[10.5px] font-bold uppercase tracking-wider sticky top-0 z-10">
                                         <tr>
+                                            <th v-if="can('delete_task')" class="py-2.5 px-2"><input type="checkbox" :checked="tableTasks.length && taskSel.count === tableTasks.length" @change="$event.target.checked ? taskSel.selectAll(tableTasks.map(t=>t.id)) : taskSel.clear()"></th>
                                             <th class="py-2.5 px-2">Task ID</th>
                                             <th class="py-2.5 px-2">Client</th>
                                             <th class="py-2.5 px-2">Service</th>
@@ -396,6 +410,7 @@
                                     </thead>
                                     <tbody class="divide-y divide-gray-100">
                                         <tr v-for="task in tableTasks" :key="task.id" class="hover:bg-gray-50/50 align-top">
+                                            <td v-if="can('delete_task')" class="py-2 px-2"><input type="checkbox" :checked="taskSel.has(task.id)" @change="taskSel.toggle(task.id)"></td>
                                             <td class="py-2 px-2 font-mono text-[11.5px] text-gray-500 truncate">{{ taskSerial(task) }}</td>
                                             <td class="py-2 px-2 font-semibold text-gray-800 truncate" :title="task.client_name">{{ task.client_name }}</td>
                                             <td class="py-2 px-2 text-gray-700 truncate" :title="task.service_name">{{ task.service_name }}</td>
@@ -429,7 +444,7 @@
                                                 </div>
                                             </td>
                                         </tr>
-                                        <tr v-if="tableTasks.length === 0"><td colspan="8" class="py-14 text-center text-gray-400 italic">No tasks match the current filter.</td></tr>
+                                        <tr v-if="tableTasks.length === 0"><td :colspan="can('delete_task') ? 9 : 8" class="py-14 text-center text-gray-400 italic">No tasks match the current filter.</td></tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -1262,14 +1277,34 @@
                                 </div>
 
                                 <div class="border-t border-gray-100 pt-4">
-                                    <h4 class="text-[13px] font-semibold text-gray-400 uppercase tracking-wide mb-3">Time Logs ({{ userStats.logCount }})</h4>
+                                    <div class="flex items-center justify-between mb-3">
+                                        <h4 class="text-[13px] font-semibold text-gray-400 uppercase tracking-wide">Time Logs ({{ userStats.logCount }})</h4>
+                                        <details v-if="isAdminOrPartner && userStats.logs.length" class="relative">
+                                            <summary class="list-none cursor-pointer px-3 py-1.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg font-semibold text-[12.5px] shadow-sm flex items-center gap-1.5">
+                                                <i class="fa-solid fa-trash-can"></i> Delete <span v-if="logSel.count" class="text-[11px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ logSel.count }}</span>
+                                                <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                                            </summary>
+                                            <div class="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
+                                                <button @click="logSel.selectAll(userStats.logs.map(l=>l.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ userStats.logs.length }})</button>
+                                                <button @click="logSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
+                                                <div class="border-t border-gray-100 my-1"></div>
+                                                <button @click="bulkDeleteLogs()" :disabled="!logSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ logSel.count }})</button>
+                                            </div>
+                                        </details>
+                                    </div>
                                     <div v-if="userStats.logs.length" class="space-y-1 max-h-80 overflow-y-auto pr-1">
                                         <div v-for="log in userStats.logs" :key="log.id" class="flex items-center justify-between gap-3 py-2.5 border-b border-gray-50">
-                                            <div class="min-w-0">
-                                                <div class="text-[14px] font-medium text-gray-800 truncate">{{ log.client_name }} · {{ log.service_name }}</div>
-                                                <div class="text-[12.5px] text-gray-400 truncate">{{ log.log_date }} — {{ log.description }}</div>
+                                            <div class="min-w-0 flex items-center gap-2.5">
+                                                <input v-if="isAdminOrPartner" type="checkbox" :checked="logSel.has(log.id)" @change="logSel.toggle(log.id)" class="shrink-0">
+                                                <div class="min-w-0">
+                                                    <div class="text-[14px] font-medium text-gray-800 truncate">{{ log.client_name }} · {{ log.service_name }}</div>
+                                                    <div class="text-[12.5px] text-gray-400 truncate">{{ log.log_date }} — {{ log.description }}</div>
+                                                </div>
                                             </div>
-                                            <span class="font-mono text-[13.5px] font-semibold text-accent whitespace-nowrap shrink-0">{{ log.hours }}h {{ log.minutes }}m</span>
+                                            <div class="flex items-center gap-2 shrink-0">
+                                                <span class="font-mono text-[13.5px] font-semibold text-accent whitespace-nowrap">{{ log.hours }}h {{ log.minutes }}m</span>
+                                                <button v-if="isAdminOrPartner" @click="deleteTimesheetLog(log)" class="text-gray-300 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition" title="Delete log entry"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
+                                            </div>
                                         </div>
                                     </div>
                                     <div v-else class="text-[13px] text-gray-400 italic py-6 text-center">No time logs in the selected range.</div>
@@ -1287,16 +1322,33 @@
                                 <div class="app-card px-5 py-3 rail-pending"><p class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">GST</p><p class="text-xl font-semibold text-gray-800 mt-0.5">{{ fmtMoney(billedTotals.gst) }}</p></div>
                                 <div class="app-card px-5 py-3 rail-completed"><p class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Total ({{ billedTotals.count }})</p><p class="text-xl font-semibold text-gray-800 mt-0.5">{{ fmtMoney(billedTotals.total) }}</p></div>
                             </div>
-                            <button @click="openExportModal('billed')" class="px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[15px] shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
-                                <i class="fa-solid fa-file-export"></i> Export
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <details v-if="can('delete_task') && billedTasks.length" class="relative">
+                                    <summary class="list-none cursor-pointer px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[15px] shadow-sm flex items-center gap-1.5 whitespace-nowrap">
+                                        <i class="fa-solid fa-trash-can"></i> Delete <span v-if="billedSel.count" class="text-[12px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ billedSel.count }}</span>
+                                        <i class="fa-solid fa-chevron-down text-[11px]"></i>
+                                    </summary>
+                                    <div class="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
+                                        <button @click="billedSel.selectAll(billedTasks.map(t=>t.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ billedTasks.length }})</button>
+                                        <button @click="billedSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
+                                        <div class="border-t border-gray-100 my-1"></div>
+                                        <button @click="bulkDeleteBilled()" :disabled="!billedSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ billedSel.count }})</button>
+                                    </div>
+                                </details>
+                                <button @click="openExportModal('billed')" class="px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[15px] shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fa-solid fa-file-export"></i> Export
+                                </button>
+                            </div>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
                             <div v-for="task in billedTasks" :key="task.id" class="app-card p-3.5 flex flex-col gap-2.5 rail-completed">
                                 <div class="flex items-start justify-between gap-2">
-                                    <div class="min-w-0">
-                                        <div class="font-semibold text-[15px] text-gray-800 truncate">{{ task.client_name }}</div>
-                                        <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12.5px] font-medium">{{ task.service_name }}</div>
+                                    <div class="min-w-0 flex items-start gap-2">
+                                        <input v-if="can('delete_task')" type="checkbox" :checked="billedSel.has(task.id)" @change="billedSel.toggle(task.id)" class="mt-1 shrink-0">
+                                        <div class="min-w-0">
+                                            <div class="font-semibold text-[15px] text-gray-800 truncate">{{ task.client_name }}</div>
+                                            <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12.5px] font-medium">{{ task.service_name }}</div>
+                                        </div>
                                     </div>
                                     <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">{{ taskSerial(task) }} · {{ task.period }}</span>
                                 </div>
@@ -1323,16 +1375,33 @@
                                 <div class="app-card px-5 py-3 rail-pending"><p class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">GST</p><p class="text-xl font-semibold text-gray-800 mt-0.5">{{ fmtMoney(receivedTotals.gst) }}</p></div>
                                 <div class="app-card px-5 py-3 rail-completed"><p class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Total ({{ receivedTotals.count }})</p><p class="text-xl font-semibold text-gray-800 mt-0.5">{{ fmtMoney(receivedTotals.total) }}</p></div>
                             </div>
-                            <button @click="openExportModal('received')" class="px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[15px] shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
-                                <i class="fa-solid fa-file-export"></i> Export
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <details v-if="can('delete_task') && receivedTasks.length" class="relative">
+                                    <summary class="list-none cursor-pointer px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[15px] shadow-sm flex items-center gap-1.5 whitespace-nowrap">
+                                        <i class="fa-solid fa-trash-can"></i> Delete <span v-if="receivedSel.count" class="text-[12px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ receivedSel.count }}</span>
+                                        <i class="fa-solid fa-chevron-down text-[11px]"></i>
+                                    </summary>
+                                    <div class="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
+                                        <button @click="receivedSel.selectAll(receivedTasks.map(t=>t.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ receivedTasks.length }})</button>
+                                        <button @click="receivedSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
+                                        <div class="border-t border-gray-100 my-1"></div>
+                                        <button @click="bulkDeleteReceived()" :disabled="!receivedSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ receivedSel.count }})</button>
+                                    </div>
+                                </details>
+                                <button @click="openExportModal('received')" class="px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[15px] shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fa-solid fa-file-export"></i> Export
+                                </button>
+                            </div>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
                             <div v-for="task in receivedTasks" :key="task.id" class="app-card p-3.5 flex flex-col gap-2.5" style="box-shadow: inset 4px 0 0 #059669;">
                                 <div class="flex items-start justify-between gap-2">
-                                    <div class="min-w-0">
-                                        <div class="font-semibold text-[15px] text-gray-800 truncate">{{ task.client_name }}</div>
-                                        <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12.5px] font-medium">{{ task.service_name }}</div>
+                                    <div class="min-w-0 flex items-start gap-2">
+                                        <input v-if="can('delete_task')" type="checkbox" :checked="receivedSel.has(task.id)" @change="receivedSel.toggle(task.id)" class="mt-1 shrink-0">
+                                        <div class="min-w-0">
+                                            <div class="font-semibold text-[15px] text-gray-800 truncate">{{ task.client_name }}</div>
+                                            <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12.5px] font-medium">{{ task.service_name }}</div>
+                                        </div>
                                     </div>
                                     <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">{{ taskSerial(task) }} · {{ task.period }}</span>
                                 </div>
@@ -1398,15 +1467,30 @@
                                 <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2"><i class="fa-solid fa-bell text-accent"></i> Notifications</h3>
                                 <p class="text-xs text-gray-500 mt-0.5">Updates about tasks assigned, delegated, and created by your team.</p>
                             </div>
-                            <button v-if="unreadNotifCount" @click="markAllNotifRead" class="px-3 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[13px] shadow-sm transition flex items-center gap-1.5">
-                                <i class="fa-solid fa-check-double"></i> Mark all read
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <button v-if="unreadNotifCount" @click="markAllNotifRead" class="px-3 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[13px] shadow-sm transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-check-double"></i> Mark all read
+                                </button>
+                                <details v-if="notifications.length" class="relative">
+                                    <summary class="list-none cursor-pointer px-3 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[13px] shadow-sm flex items-center gap-1.5">
+                                        <i class="fa-solid fa-trash-can"></i> Delete <span v-if="notifSel.count" class="text-[11px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ notifSel.count }}</span>
+                                        <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                                    </summary>
+                                    <div class="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
+                                        <button @click="notifSel.selectAll(notifications.map(n=>n.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ notifications.length }})</button>
+                                        <button @click="notifSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
+                                        <div class="border-t border-gray-100 my-1"></div>
+                                        <button @click="bulkDeleteNotifs()" :disabled="!notifSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ notifSel.count }})</button>
+                                    </div>
+                                </details>
+                            </div>
                         </div>
                         <div class="app-card divide-y divide-gray-50">
                             <div v-for="n in notifications" :key="n.id"
                                  @click="openNotificationTask(n)"
                                  class="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition"
                                  :class="!n.read_at ? 'bg-accent-light/40' : ''">
+                                <input type="checkbox" :checked="notifSel.has(n.id)" @click.stop @change="notifSel.toggle(n.id)" class="mt-2.5 shrink-0">
                                 <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
                                      :class="n.type === 'delegation' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'">
                                     <i class="fa-solid" :class="notifIcon(n)"></i>
@@ -1426,6 +1510,7 @@
                                 <span v-else-if="canLockTasks && n.type === 'self_task_created' && notifTaskApproved(n)" class="shrink-0 text-[11.5px] font-semibold text-emerald-700 inline-flex items-center gap-1">
                                     <i class="fa-solid fa-circle-check text-[10px]"></i> Approved
                                 </span>
+                                <button @click.stop="deleteNotification(n)" class="shrink-0 text-gray-300 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete notification"><i class="fa-solid fa-trash-can text-[12px]"></i></button>
                             </div>
                             <div v-if="!notifications.length" class="px-4 py-14 text-center text-gray-400 italic">No notifications yet.</div>
                         </div>

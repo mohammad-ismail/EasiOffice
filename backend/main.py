@@ -1161,6 +1161,41 @@ def read_all_notifications():
     return jsonify({"status": "success", "marked": n})
 
 
+@app.route('/api/notifications/<int:nid>', methods=['DELETE'])
+@login_required
+def delete_notification(nid):
+    db = get_db()
+    ok = crud.delete_notification(db, nid, session.get('user_id'))
+    db.close()
+    if not ok:
+        abort(404, description="Notification not found")
+    return jsonify({"status": "success"})
+
+
+@app.route('/api/timesheets/<int:ts_id>', methods=['DELETE'])
+@admin_or_partner_required
+def delete_timesheet_entry(ts_id):
+    """Delete a single timesheet log entry (Admin/Partner only)."""
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''SELECT t.employee_name, t.hours, t.minutes, c.name as client_name, s.name as service_name
+                      FROM timesheets t
+                      LEFT JOIN task_board tb ON t.task_id = tb.id
+                      LEFT JOIN client_master c ON tb.client_id = c.id
+                      LEFT JOIN service_master s ON tb.service_id = s.id
+                      WHERE t.id = ?''', (ts_id,))
+    ts = cursor.fetchone()
+    ok = crud.delete_timesheet(db, ts_id)
+    if ok and ts:
+        crud.log_user_action(db, current_username(), "Timesheet Entry Deleted",
+                             f"Deleted {ts['hours']}h {ts['minutes']}m log "
+                             f"by {ts['employee_name']} for '{ts['client_name']} - {ts['service_name']}'")
+    db.close()
+    if not ok:
+        abort(404, description="Timesheet entry not found")
+    return jsonify({"status": "success"})
+
+
 # --- Personal calendar -------------------------------------------------------
 _DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 _TIME_RE = re.compile(r'^\d{2}:\d{2}$')

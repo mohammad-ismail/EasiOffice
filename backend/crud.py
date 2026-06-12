@@ -147,6 +147,13 @@ def mark_all_notifications_read(db, user_id: int):
     db.commit()
     return cur.rowcount
 
+def delete_notification(db, nid: int, user_id: int):
+    """Delete one of the user's own notifications."""
+    cur = db.cursor()
+    cur.execute('DELETE FROM notifications WHERE id = ? AND user_id = ?', (nid, user_id))
+    db.commit()
+    return cur.rowcount > 0
+
 
 # --- Calendar events (per user) ---------------------------------------------
 def list_calendar_events(db, user_id: int, from_date: str = None, to_date: str = None):
@@ -595,6 +602,13 @@ def get_timesheets(db):
         ORDER BY t.log_date DESC, t.id DESC
     ''')
     return [dict(row) for row in cursor.fetchall()]
+
+def delete_timesheet(db, ts_id: int):
+    """Delete a single timesheet log entry. Returns True if a row was removed."""
+    cursor = db.cursor()
+    cursor.execute('DELETE FROM timesheets WHERE id = ?', (ts_id,))
+    db.commit()
+    return cursor.rowcount > 0
 
 def create_timesheet(db, ts_data: dict):
     cursor = db.cursor()

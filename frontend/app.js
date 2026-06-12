@@ -786,6 +786,16 @@ createApp({
             return 'fa-bell';
         };
 
+        // A pending approval-request notification can't be deleted until the task
+        // has been approved (locked). All other notifications are always deletable.
+        const notifDeletable = (n) => {
+            if (n.type === 'self_task_created' && n.task_id) {
+                const t = tasks.value.find(x => x.id === n.task_id);
+                if (t && !t.locked) return false;
+            }
+            return true;
+        };
+
         // ===================== Task lock =====================
         const canLockTasks = computed(() => ['Admin', 'Partner', 'Manager'].includes(currentUser.value.role));
         // A task carries the blue-dotted style while it was created by an Employee
@@ -3007,6 +3017,7 @@ createApp({
             markAllNotifRead,
             openNotificationTask,
             notifIcon,
+            notifDeletable,
             canLockTasks,
             canEditTask,
             toggleTaskLock,

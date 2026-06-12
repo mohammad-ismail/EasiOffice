@@ -1165,6 +1165,21 @@ def read_all_notifications():
 @login_required
 def delete_notification(nid):
     db = get_db()
+    cur = db.cursor()
+    cur.execute('SELECT type, task_id FROM notifications WHERE id = ? AND user_id = ?',
+                (nid, session.get('user_id')))
+    row = cur.fetchone()
+    if not row:
+        db.close()
+        abort(404, description="Notification not found")
+    # An approval-request notification can't be dismissed while its task is still
+    # pending — it must be approved (locked) first, so the request isn't lost.
+    if row['type'] == 'self_task_created' and row['task_id']:
+        cur.execute('SELECT locked FROM task_board WHERE id = ?', (row['task_id'],))
+        t = cur.fetchone()
+        if t and not t['locked']:
+            db.close()
+            abort(400, description="This task is still pending approval. Approve it before deleting the request.")
     ok = crud.delete_notification(db, nid, session.get('user_id'))
     db.close()
     if not ok:

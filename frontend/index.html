@@ -1477,7 +1477,7 @@
                                         <i class="fa-solid fa-chevron-down text-[10px]"></i>
                                     </summary>
                                     <div class="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
-                                        <button @click="notifSel.selectAll(notifications.map(n=>n.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ notifications.length }})</button>
+                                        <button @click="notifSel.selectAll(notifications.filter(notifDeletable).map(n=>n.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all deletable ({{ notifications.filter(notifDeletable).length }})</button>
                                         <button @click="notifSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
                                         <div class="border-t border-gray-100 my-1"></div>
                                         <button @click="bulkDeleteNotifs()" :disabled="!notifSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ notifSel.count }})</button>
@@ -1490,7 +1490,8 @@
                                  @click="openNotificationTask(n)"
                                  class="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition"
                                  :class="!n.read_at ? 'bg-accent-light/40' : ''">
-                                <input type="checkbox" :checked="notifSel.has(n.id)" @click.stop @change="notifSel.toggle(n.id)" class="mt-2.5 shrink-0">
+                                <input v-if="notifDeletable(n)" type="checkbox" :checked="notifSel.has(n.id)" @click.stop @change="notifSel.toggle(n.id)" class="mt-2.5 shrink-0">
+                                <span v-else class="mt-2 shrink-0 w-3.5" title="Pending approval — can't be deleted yet"></span>
                                 <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
                                      :class="n.type === 'delegation' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'">
                                     <i class="fa-solid" :class="notifIcon(n)"></i>
@@ -1510,7 +1511,8 @@
                                 <span v-else-if="canLockTasks && n.type === 'self_task_created' && notifTaskApproved(n)" class="shrink-0 text-[11.5px] font-semibold text-emerald-700 inline-flex items-center gap-1">
                                     <i class="fa-solid fa-circle-check text-[10px]"></i> Approved
                                 </span>
-                                <button @click.stop="deleteNotification(n)" class="shrink-0 text-gray-300 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete notification"><i class="fa-solid fa-trash-can text-[12px]"></i></button>
+                                <button v-if="notifDeletable(n)" @click.stop="deleteNotification(n)" class="shrink-0 text-gray-300 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete notification"><i class="fa-solid fa-trash-can text-[12px]"></i></button>
+                                <span v-else class="shrink-0 text-[10.5px] font-semibold text-blue-500 inline-flex items-center gap-1" title="Approve this task before the request can be dismissed"><i class="fa-solid fa-hourglass-half text-[10px]"></i> Pending</span>
                             </div>
                             <div v-if="!notifications.length" class="px-4 py-14 text-center text-gray-400 italic">No notifications yet.</div>
                         </div>

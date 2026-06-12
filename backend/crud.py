@@ -604,6 +604,19 @@ def set_task_billing(db, task_id: int, fields: dict):
     return cursor.rowcount > 0
 
 # --- Persistent task timers (one running per user) ---------------------------
+def _close_open_intervals(cursor, user_id):
+    """Close any still-open timer interval(s) for the user (records end timestamp)."""
+    now = datetime.now()
+    now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("SELECT id, started_at FROM timer_intervals WHERE user_id = ? AND ended_at IS NULL", (user_id,))
+    for r in cursor.fetchall():
+        try:
+            start = datetime.strptime(r['started_at'], "%Y-%m-%d %H:%M:%S")
+            secs = max(0, int((now - start).total_seconds()))
+        except (ValueError, TypeError):
+            secs = 0
+        cursor.execute("UPDATE timer_intervals SET ended_at = ?, seconds = ? WHERE id = ?", (now_str, secs, r['id']))
+
 def _bank_running_for_user(cursor, user_id, now):
     """Pause every running timer for this user, banking its elapsed seconds."""
     cursor.execute("SELECT id, accumulated_seconds, running_since FROM task_timers "
@@ -612,6 +625,7 @@ def _bank_running_for_user(cursor, user_id, now):
         elapsed = max(0, int(now - (row['running_since'] or now)))
         cursor.execute("UPDATE task_timers SET accumulated_seconds = ?, running_since = NULL WHERE id = ?",
                        ((row['accumulated_seconds'] or 0) + elapsed, row['id']))
+    _close_open_intervals(cursor, user_id)
 
 def get_user_timers(db, user_id):
     """Current elapsed seconds + running flag for each of the user's task timers."""
@@ -626,10 +640,12 @@ def get_user_timers(db, user_id):
     return out
 
 def timer_start(db, task_id, user_id):
-    """Start/resume this task's timer for the user; pause any other running one."""
+    """Start/resume this task's timer for the user; pause any other running one and
+    open a new run interval (records start timestamp)."""
     now = time.time()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor = db.cursor()
-    _bank_running_for_user(cursor, user_id, now)
+    _bank_running_for_user(cursor, user_id, now)   # also closes any open interval
     cursor.execute("SELECT id FROM task_timers WHERE task_id = ? AND user_id = ?", (task_id, user_id))
     row = cursor.fetchone()
     if row:
@@ -637,10 +653,13 @@ def timer_start(db, task_id, user_id):
     else:
         cursor.execute("INSERT INTO task_timers (task_id, user_id, accumulated_seconds, running_since) "
                        "VALUES (?, ?, 0, ?)", (task_id, user_id, now))
+    cursor.execute("INSERT INTO timer_intervals (task_id, user_id, started_at, ended_at, seconds) "
+                   "VALUES (?, ?, ?, NULL, NULL)", (task_id, user_id, now_str))
     db.commit()
 
 def timer_pause(db, task_id, user_id):
-    """Pause this task's timer for the user, banking elapsed seconds."""
+    """Pause this task's timer for the user, banking elapsed seconds and closing
+    the open run interval (records end timestamp)."""
     now = time.time()
     cursor = db.cursor()
     cursor.execute("SELECT id, accumulated_seconds, running_since FROM task_timers "
@@ -650,13 +669,15 @@ def timer_pause(db, task_id, user_id):
         elapsed = max(0, int(now - row['running_since']))
         cursor.execute("UPDATE task_timers SET accumulated_seconds = ?, running_since = NULL WHERE id = ?",
                        ((row['accumulated_seconds'] or 0) + elapsed, row['id']))
-        db.commit()
+    _close_open_intervals(cursor, user_id)
+    db.commit()
     return True
 
 def timer_reset(db, task_id):
     """Reset (clear) this task's timer for every user."""
     cursor = db.cursor()
     cursor.execute("DELETE FROM task_timers WHERE task_id = ?", (task_id,))
+    cursor.execute("DELETE FROM timer_intervals WHERE task_id = ?", (task_id,))
     db.commit()
     return True
 
@@ -739,4 +760,100 @@ def daily_logged_in_seconds(db, user_id, date_str):
             first_login = r['login_at']
         last_out = end_str
     return {"seconds": total, "first_login": first_login, "last_logout": last_out}
+
+# --- Daily timesheets & report ------------------------------------------------
+def upsert_daily_timesheet(db, user_id, log_date, description):
+    """Create/replace the user's filed timesheet for a day; stamps submitted_at."""
+    now = _now_str()
+    cur = db.cursor()
+    cur.execute("SELECT id FROM daily_timesheets WHERE user_id = ? AND log_date = ?", (user_id, log_date))
+    row = cur.fetchone()
+    if row:
+        cur.execute("UPDATE daily_timesheets SET description = ?, submitted_at = ? WHERE id = ?",
+                    (description, now, row['id']))
+    else:
+        cur.execute("INSERT INTO daily_timesheets (user_id, log_date, description, submitted_at) VALUES (?, ?, ?, ?)",
+                    (user_id, log_date, description, now))
+    db.commit()
+    return True
+
+def build_timesheet_report(db, user_ids, from_date, to_date):
+    """Per (user, day) report: logged-in time + each task worked that day (time
+    today from timer intervals, start/end timestamps, total since creation,
+    status, dates) + the filed description and a late/early submission flag."""
+    if not user_ids:
+        return []
+    cur = db.cursor()
+    ph = ",".join("?" * len(user_ids))
+    cur.execute("SELECT id, full_name FROM users")
+    names = {r['id']: r['full_name'] for r in cur.fetchall()}
+
+    day_keys = set()
+    cur.execute(f"""SELECT DISTINCT user_id, substr(started_at,1,10) AS d FROM timer_intervals
+                    WHERE user_id IN ({ph}) AND substr(started_at,1,10) BETWEEN ? AND ?""",
+                (*user_ids, from_date, to_date))
+    for r in cur.fetchall():
+        day_keys.add((r['user_id'], r['d']))
+    cur.execute(f"""SELECT user_id, log_date AS d FROM daily_timesheets
+                    WHERE user_id IN ({ph}) AND log_date BETWEEN ? AND ?""",
+                (*user_ids, from_date, to_date))
+    for r in cur.fetchall():
+        day_keys.add((r['user_id'], r['d']))
+
+    report = []
+    for (uid, d) in sorted(day_keys, key=lambda x: (x[1], names.get(x[0], '')), reverse=True):
+        li = daily_logged_in_seconds(db, uid, d)
+        cur.execute("SELECT description, submitted_at FROM daily_timesheets WHERE user_id = ? AND log_date = ?", (uid, d))
+        dts = cur.fetchone()
+        description = dts['description'] if dts else None
+        submitted_at = dts['submitted_at'] if dts else None
+        flag = 'ontime'
+        if submitted_at:
+            sub_date = submitted_at[:10]
+            if sub_date > d:
+                flag = 'late'
+            elif sub_date < d:
+                flag = 'early'
+
+        cur.execute("""SELECT task_id,
+                              SUM(CASE WHEN seconds IS NOT NULL THEN seconds ELSE 0 END) AS secs,
+                              MIN(started_at) AS start_ts, MAX(ended_at) AS end_ts,
+                              SUM(CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) AS open_count
+                       FROM timer_intervals
+                       WHERE user_id = ? AND substr(started_at,1,10) = ?
+                       GROUP BY task_id""", (uid, d))
+        tasks = []
+        for tr in cur.fetchall():
+            tid = tr['task_id']
+            cur.execute("""SELECT c.name AS client_name, s.name AS service_name, t.status, t.financial_year, t.period, t.task_no
+                           FROM task_board t LEFT JOIN client_master c ON t.client_id = c.id
+                           LEFT JOIN service_master s ON t.service_id = s.id WHERE t.id = ?""", (tid,))
+            tb = cur.fetchone()
+            cur.execute("SELECT accumulated_seconds FROM task_timers WHERE task_id = ? AND user_id = ?", (tid, uid))
+            tt = cur.fetchone()
+            total = (tt['accumulated_seconds'] or 0) if tt else 0
+            cur.execute("SELECT MIN(substr(started_at,1,10)) AS sd FROM timer_intervals WHERE task_id = ?", (tid,))
+            sd = cur.fetchone()['sd']
+            tasks.append({
+                "task_id": tid,
+                "client_name": tb['client_name'] if tb else None,
+                "service_name": tb['service_name'] if tb else None,
+                "status": tb['status'] if tb else None,
+                "financial_year": tb['financial_year'] if tb else None,
+                "period": tb['period'] if tb else None,
+                "task_no": tb['task_no'] if tb else None,
+                "start_date": sd,
+                "time_today_seconds": tr['secs'] or 0,
+                "start_ts": tr['start_ts'],
+                "end_ts": tr['end_ts'],
+                "running": bool(tr['open_count']),
+                "total_seconds": total,
+            })
+        report.append({
+            "user_id": uid, "full_name": names.get(uid), "date": d,
+            "logged_seconds": li['seconds'], "first_login": li['first_login'], "last_logout": li['last_logout'],
+            "description": description, "submitted_at": submitted_at, "submission_flag": flag,
+            "tasks": tasks,
+        })
+    return report
 

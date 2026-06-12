@@ -262,6 +262,34 @@ def init_db():
     )
     ''')
 
+    # Auto-migration: individual timer run intervals (start/end timestamps per task
+    # per user) — powers the per-task "time spent today" breakdown on the timesheet.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS timer_intervals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER,
+        user_id INTEGER,
+        started_at TEXT,
+        ended_at TEXT,
+        seconds INTEGER,
+        FOREIGN KEY (task_id) REFERENCES task_board (id)
+    )
+    ''')
+
+    # Auto-migration: the user's filed timesheet for a day (date + optional notes).
+    # submitted_at records WHEN it was filed, so late/early submissions can be flagged.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS daily_timesheets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        log_date TEXT,
+        description TEXT,
+        submitted_at TEXT,
+        UNIQUE(user_id, log_date),
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )
+    ''')
+
     conn.commit()
     conn.close()
 

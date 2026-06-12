@@ -1130,6 +1130,53 @@ def read_timesheets():
     db.close()
     return jsonify(timesheets)
 
+
+@app.route('/api/daily-timesheet', methods=['POST'])
+@login_required
+def file_daily_timesheet():
+    """File the current user's timesheet for a day (date + optional description).
+    Tasks and time come from the timers; this just records the day's narrative."""
+    data = get_body()
+    validation.require(data, 'log_date')
+    log_date = str(data['log_date']).strip()
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', log_date):
+        abort(400, description="Date must be in YYYY-MM-DD format.")
+    db = get_db()
+    crud.upsert_daily_timesheet(db, session.get('user_id'), log_date, (data.get('description') or '').strip())
+    crud.log_user_action(db, current_username(), "Timesheet Filed", f"Filed timesheet for {log_date}")
+    db.close()
+    return jsonify({"status": "success"})
+
+
+@app.route('/api/timesheet-report', methods=['GET'])
+@login_required
+def timesheet_report():
+    """Per-day, per-task timesheet report. Employees see only themselves; Admin/
+    Partner/Manager can view any one user or all users over a date range."""
+    role, _perms = current_role_and_perms()
+    from_date = request.args.get('from')
+    to_date = request.args.get('to')
+    if not from_date or not to_date:
+        abort(400, description="'from' and 'to' dates are required.")
+    db = get_db()
+    cursor = db.cursor()
+    if role in ('Admin', 'Partner', 'Manager'):
+        req_user = request.args.get('user_id')
+        if req_user and req_user != 'all':
+            try:
+                user_ids = [int(req_user)]
+            except ValueError:
+                db.close()
+                abort(400, description="Invalid user_id.")
+        else:
+            cursor.execute("SELECT id FROM users")
+            user_ids = [r['id'] for r in cursor.fetchall()]
+    else:
+        user_ids = [session.get('user_id')]
+    report = crud.build_timesheet_report(db, user_ids, from_date, to_date)
+    db.close()
+    return jsonify(report)
+
 @app.route('/api/timesheets', methods=['POST'])
 @login_required
 def create_single_timesheet():

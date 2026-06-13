@@ -1222,8 +1222,9 @@ def _validate_event_payload(data):
         v = data.get(k)
         if v and not _TIME_RE.match(str(v)):
             abort(400, description=f"{k} must be in HH:MM format if provided.")
-    if not (data.get('title') or '').strip():
-        abort(400, description="Event title is required.")
+    # An event needs at least one of: a title, or a linked task.
+    if not (data.get('title') or '').strip() and not data.get('task_id'):
+        abort(400, description="Enter a title or pick a task for the event.")
 
 
 @app.route('/api/calendar', methods=['GET'])

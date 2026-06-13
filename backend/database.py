@@ -303,6 +303,13 @@ def init_db():
     )
     ''')
 
+    # Auto-migration: optional link from a calendar event to a (not-completed)
+    # task. An event can be title-only, task-only, or both.
+    cursor.execute("PRAGMA table_info(calendar_events)")
+    ce_cols = [row[1] for row in cursor.fetchall()]
+    if 'task_id' not in ce_cols:
+        cursor.execute("ALTER TABLE calendar_events ADD COLUMN task_id INTEGER")
+
     # Auto-migration: in-app notifications (one row per recipient). type names
     # are free-form strings used for icon/text routing in the frontend.
     cursor.execute('''

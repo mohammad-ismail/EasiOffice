@@ -639,7 +639,26 @@ createApp({
         // ===================== Personal Calendar =====================
         const calMonth = ref(today.slice(0, 7));   // YYYY-MM currently displayed
         const calEvents = ref([]);
-        const calEventForm = ref({ id: null, event_date: today, start_time: '', end_time: '', title: '', notes: '', color: '#3B82F6' });
+        const blankCalEvent = (date) => ({ id: null, event_date: date, start_time: '', end_time: '', title: '', notes: '', color: '#3B82F6', task_id: '' });
+        const calEventForm = ref(blankCalEvent(today));
+
+        // Tasks the user may link to a calendar event: visible to them and not
+        // yet completed (and not in the billing pipeline).
+        const calendarLinkableTasks = computed(() =>
+            visibleTasks.value
+                .filter(t => t.status !== 'Completed' && !t.billing_stage)
+                .slice()
+                .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1));
+        // Short label for a linked task (in the picker and on the event chip).
+        const taskPickLabel = (t) => `${t.client_name} · ${t.service_name}${t.period ? ' (' + t.period + ')' : ''}`;
+        // Display label for a calendar event: title, task, or "title — task".
+        const calEventLabel = (ev) => {
+            const taskPart = ev.task_id && ev.task_client
+                ? `${ev.task_client} · ${ev.task_service}${ev.task_period ? ' (' + ev.task_period + ')' : ''}`
+                : '';
+            if (ev.title && taskPart) return `${ev.title} — ${taskPart}`;
+            return ev.title || taskPart || '(untitled)';
+        };
         const showCalendarDayModal = ref(false);
         const calSelectedDate = ref(today);
 
@@ -697,30 +716,34 @@ createApp({
 
         const openCalendarDay = (cell) => {
             calSelectedDate.value = cell.date;
-            calEventForm.value = { id: null, event_date: cell.date, start_time: '', end_time: '', title: '', notes: '', color: '#3B82F6' };
+            calEventForm.value = blankCalEvent(cell.date);
             showCalendarDayModal.value = true;
         };
         const startEditCalEvent = (ev) => {
             calEventForm.value = { id: ev.id, event_date: ev.event_date, start_time: ev.start_time || '',
-                                   end_time: ev.end_time || '', title: ev.title, notes: ev.notes || '',
-                                   color: ev.color || '#3B82F6' };
+                                   end_time: ev.end_time || '', title: ev.title || '', notes: ev.notes || '',
+                                   color: ev.color || '#3B82F6', task_id: ev.task_id || '' };
         };
         const closeCalendarDayModal = () => { showCalendarDayModal.value = false; };
 
         const submitCalEvent = async () => {
             const f = calEventForm.value;
-            if (!f.title || !f.title.trim()) { alert('Event title is required.'); return; }
+            // Need at least a title OR a linked task.
+            if ((!f.title || !f.title.trim()) && !f.task_id) {
+                alert('Enter a title or pick a task for the event.'); return;
+            }
             try {
                 const method = f.id ? 'PUT' : 'POST';
                 const url = f.id ? `/api/calendar/${f.id}` : '/api/calendar';
                 const res = await apiFetch(url, {
                     method, headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ event_date: f.event_date, start_time: f.start_time,
-                                          end_time: f.end_time, title: f.title.trim(),
-                                          notes: f.notes, color: f.color })
+                                          end_time: f.end_time, title: (f.title || '').trim(),
+                                          notes: f.notes, color: f.color,
+                                          task_id: f.task_id || null })
                 });
                 if (res.ok) {
-                    calEventForm.value = { id: null, event_date: calSelectedDate.value, start_time: '', end_time: '', title: '', notes: '', color: '#3B82F6' };
+                    calEventForm.value = blankCalEvent(calSelectedDate.value);
                     await fetchCalendar();
                 } else {
                     const e = await res.json().catch(() => ({}));
@@ -730,12 +753,12 @@ createApp({
         };
 
         const deleteCalEvent = async (ev) => {
-            if (!confirm(`Delete event "${ev.title}"?`)) return;
+            if (!confirm(`Delete event "${calEventLabel(ev)}"?`)) return;
             try {
                 const res = await apiFetch(`/api/calendar/${ev.id}`, { method: 'DELETE' });
                 if (res.ok) {
                     if (calEventForm.value.id === ev.id) {
-                        calEventForm.value = { id: null, event_date: calSelectedDate.value, start_time: '', end_time: '', title: '', notes: '', color: '#3B82F6' };
+                        calEventForm.value = blankCalEvent(calSelectedDate.value);
                     }
                     await fetchCalendar();
                 }
@@ -3046,6 +3069,9 @@ createApp({
             calSelectedDate,
             showCalendarDayModal,
             selectedDayEvents,
+            calendarLinkableTasks,
+            taskPickLabel,
+            calEventLabel,
             shiftCalMonth,
             goCalToday,
             openCalendarDay,

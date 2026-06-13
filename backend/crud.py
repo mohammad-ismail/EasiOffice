@@ -156,28 +156,36 @@ def delete_notification(db, nid: int, user_id: int):
 
 
 # --- Calendar events (per user) ---------------------------------------------
+_CAL_SELECT = '''SELECT e.id, e.event_date, e.start_time, e.end_time, e.title, e.notes, e.color,
+                        e.created_at, e.task_id,
+                        c.name AS task_client, s.name AS task_service, t.status AS task_status,
+                        t.period AS task_period
+                 FROM calendar_events e
+                 LEFT JOIN task_board t ON e.task_id = t.id
+                 LEFT JOIN client_master c ON t.client_id = c.id
+                 LEFT JOIN service_master s ON t.service_id = s.id'''
+
 def list_calendar_events(db, user_id: int, from_date: str = None, to_date: str = None):
     cur = db.cursor()
     if from_date and to_date:
-        cur.execute('''SELECT id, event_date, start_time, end_time, title, notes, color, created_at
-                       FROM calendar_events
-                       WHERE user_id = ? AND event_date BETWEEN ? AND ?
-                       ORDER BY event_date, IFNULL(start_time, '99:99'), id''',
+        cur.execute(_CAL_SELECT + '''
+                       WHERE e.user_id = ? AND e.event_date BETWEEN ? AND ?
+                       ORDER BY e.event_date, IFNULL(e.start_time, '99:99'), e.id''',
                     (user_id, from_date, to_date))
     else:
-        cur.execute('''SELECT id, event_date, start_time, end_time, title, notes, color, created_at
-                       FROM calendar_events
-                       WHERE user_id = ?
-                       ORDER BY event_date DESC, IFNULL(start_time, '99:99'), id''', (user_id,))
+        cur.execute(_CAL_SELECT + '''
+                       WHERE e.user_id = ?
+                       ORDER BY e.event_date DESC, IFNULL(e.start_time, '99:99'), e.id''', (user_id,))
     return [dict(r) for r in cur.fetchall()]
 
 def create_calendar_event(db, user_id: int, data: dict):
     cur = db.cursor()
-    cur.execute('''INSERT INTO calendar_events (user_id, event_date, start_time, end_time, title, notes, color, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+    cur.execute('''INSERT INTO calendar_events (user_id, event_date, start_time, end_time, title, notes, color, task_id, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                 (user_id, data['event_date'], data.get('start_time') or None,
                  data.get('end_time') or None, data.get('title') or '',
-                 data.get('notes') or '', data.get('color') or '#3B82F6', _now_str()))
+                 data.get('notes') or '', data.get('color') or '#3B82F6',
+                 data.get('task_id') or None, _now_str()))
     db.commit()
     return {"id": cur.lastrowid}
 
@@ -187,11 +195,11 @@ def update_calendar_event(db, event_id: int, user_id: int, data: dict):
     if not cur.fetchone():
         return False
     cur.execute('''UPDATE calendar_events
-                   SET event_date = ?, start_time = ?, end_time = ?, title = ?, notes = ?, color = ?
+                   SET event_date = ?, start_time = ?, end_time = ?, title = ?, notes = ?, color = ?, task_id = ?
                    WHERE id = ? AND user_id = ?''',
                 (data['event_date'], data.get('start_time') or None, data.get('end_time') or None,
                  data.get('title') or '', data.get('notes') or '',
-                 data.get('color') or '#3B82F6', event_id, user_id))
+                 data.get('color') or '#3B82F6', data.get('task_id') or None, event_id, user_id))
     db.commit()
     return cur.rowcount > 0
 

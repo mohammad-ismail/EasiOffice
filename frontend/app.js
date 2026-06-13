@@ -1087,7 +1087,17 @@ createApp({
 
         // Delete a task (admin/partner / delete_task permission).
         const deleteTask = async (task) => {
-            if (!confirm(`Delete the task "${task.client_name} · ${task.service_name}" (${task.period})? This cannot be undone.`)) return;
+            const label = `"${task.client_name} · ${task.service_name}" (${task.period})`;
+            // Warn specifically when the task hasn't reached the billing pipeline yet.
+            let msg;
+            if (!task.billing_stage) {
+                msg = `This task ${label} has NOT been billed yet. Do you still want to delete it? This cannot be undone.`;
+            } else if (task.billing_stage === 'Billed') {
+                msg = `This task ${label} is billed but fees are NOT yet received. Delete it anyway? This cannot be undone.`;
+            } else {
+                msg = `Delete the task ${label}? This cannot be undone.`;
+            }
+            if (!confirm(msg)) return;
             try {
                 const res = await apiFetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
                 if (res.ok) {

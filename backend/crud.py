@@ -777,9 +777,15 @@ def delegate_task(db, task_id: int, user_id):
     return cursor.rowcount > 0
 
 def delete_task(db, task_id: int):
-    """Delete a task and any timesheets logged against it."""
+    """Delete a task and everything that references it: timesheets, persistent
+    timers, timer intervals, and any notifications pointing at it. Without
+    clearing the timer rows (which carry a FK to task_board) the delete would
+    fail for any task that ever had a timer started."""
     cursor = db.cursor()
     cursor.execute('DELETE FROM timesheets WHERE task_id = ?', (task_id,))
+    cursor.execute('DELETE FROM task_timers WHERE task_id = ?', (task_id,))
+    cursor.execute('DELETE FROM timer_intervals WHERE task_id = ?', (task_id,))
+    cursor.execute('DELETE FROM notifications WHERE task_id = ?', (task_id,))
     cursor.execute('DELETE FROM task_board WHERE id = ?', (task_id,))
     db.commit()
     return cursor.rowcount > 0

@@ -10,6 +10,31 @@ createApp({
         // Theme Palette Configurations
         const currentPalette = ref('default');
         const showPaletteDropdown = ref(false);
+        const showUserMenu = ref(false);
+
+        // ===================== In-app toast notifications =====================
+        // A lightweight custom notifier used across pages for action feedback
+        // (create / update / delete / errors) instead of the browser's alert().
+        const toasts = ref([]);
+        let _toastSeq = 0;
+        const notify = (message, type = 'success', timeout = 3500) => {
+            const id = ++_toastSeq;
+            toasts.value.push({ id, message, type });
+            if (timeout) setTimeout(() => dismissToast(id), timeout);
+            return id;
+        };
+        const dismissToast = (id) => { toasts.value = toasts.value.filter(t => t.id !== id); };
+
+        // True while any modal/drawer/form overlay is open — used to pause the
+        // 5-second auto-refresh so it doesn't disrupt something being edited.
+        const anyModalOpen = () => (
+            showTaskModal.value || showClientModal.value || showUserModal.value ||
+            showServiceModal.value || showProfileModal.value || showCalendarDayModal.value ||
+            showBillingModal.value || showAssignModal.value || showImportModal.value ||
+            showExportModal.value || showClearLogModal.value || showDeleteUserModal.value ||
+            showRecurringModal.value || showCompletionModal.value ||
+            !!vaultClientObj.value || !!contactClientObj.value
+        );
 
         const palettes = {
             default: {
@@ -833,6 +858,9 @@ createApp({
         const canEditTask = (t) => {
             if (!can('create_task')) return false;
             if (t && t.locked && !canLockTasks.value) return false;
+            // Once Completed, only the Admin may edit it (e.g. move it back to
+            // Working / Pending). Everyone else loses the edit action.
+            if (t && t.status === 'Completed' && currentUser.value.role !== 'Admin') return false;
             return true;
         };
         const toggleTaskLock = async (task) => {
@@ -964,6 +992,15 @@ createApp({
         };
 
         const handleLogout = async () => {
+            // Pause any running timer so logging out banks the time and ends the
+            // work session cleanly.
+            try {
+                const rid = runningTaskId.value;
+                if (rid) {
+                    const t = tasks.value.find(x => x.id === rid);
+                    if (t) await pauseTaskTimer(t);
+                }
+            } catch (e) { /* ignore */ }
             try {
                 await apiFetch('/api/logout', { method: 'POST' });
             } catch (e) {
@@ -1022,13 +1059,17 @@ createApp({
 
         const submitTaskForm = async () => {
             try {
+                const wasEditing = !!editingTaskId.value;
+                const wasApproval = approveMode.value && wasEditing;
                 const method = editingTaskId.value ? 'PUT' : 'POST';
                 const url = editingTaskId.value ? `/api/tasks/${editingTaskId.value}` : '/api/tasks';
                 const estimated_minutes = (Number(taskForm.value.est_hours) || 0) * 60 + (Number(taskForm.value.est_minutes) || 0);
                 const payload = { ...taskForm.value, estimated_minutes };
+                // A user who can't assign to others always owns the tasks they create.
+                if (!wasEditing && !can('assign_task')) payload.assigned_to = currentUser.value.id;
                 // In approval mode, the server applies edits AND flips the
                 // approved/locked flag + notifies the creator with a diff.
-                if (approveMode.value && editingTaskId.value) payload.approval = true;
+                if (wasApproval) payload.approval = true;
                 const res = await apiFetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
@@ -1038,13 +1079,14 @@ createApp({
                     approveMode.value = false;
                     closeTaskModal();
                     await fetchData();
+                    notify(wasApproval ? 'Task approved.' : (wasEditing ? 'Task updated.' : 'Task created.'));
                 } else {
                     const err = await res.json().catch(() => ({}));
-                    alert(err.message || "Could not save the task. Please check the fields and try again.");
+                    notify(err.message || 'Could not save the task. Please check the fields and try again.', 'error');
                 }
             } catch (error) {
                 console.error("Error saving task details:", error);
-                alert("Could not save the task. Please try again.");
+                notify('Could not save the task. Please try again.', 'error');
             }
         };
 
@@ -1125,9 +1167,10 @@ createApp({
                 const res = await apiFetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
                 if (res.ok) {
                     await fetchData();
+                    notify('Task deleted.');
                 } else {
                     const err = await res.json().catch(() => ({}));
-                    alert(err.message || 'Could not delete task.');
+                    notify(err.message || 'Could not delete task.', 'error');
                 }
             } catch (e) { console.error('Delete task error', e); }
         };
@@ -1139,8 +1182,8 @@ createApp({
             try {
                 const res = await apiFetch(`/api/services/${service.id}`, { method: 'DELETE' });
                 const data = await res.json().catch(() => ({}));
-                if (res.ok) { await fetchData(); }
-                else { alert(data.message || 'Could not delete service.'); }
+                if (res.ok) { await fetchData(); notify('Service deleted.'); }
+                else { notify(data.message || 'Could not delete service.', 'error'); }
             } catch (e) { console.error('Delete service error', e); }
         };
 
@@ -1285,8 +1328,9 @@ createApp({
                 const data = await res.json().catch(() => ({}));
                 if (res.ok) {
                     await fetchData();
+                    notify('Client deleted.');
                 } else {
-                    alert(data.message || 'Could not delete client.');
+                    notify(data.message || 'Could not delete client.', 'error');
                 }
             } catch (e) { console.error('Delete client error', e); }
         };
@@ -1398,14 +1442,17 @@ createApp({
                     body: JSON.stringify(clientForm.value)
                 });
                 if (res.ok) {
+                    const wasEditing = !!editingClientId.value;
                     closeClientModal();
                     await fetchData();
+                    notify(wasEditing ? 'Client updated.' : 'Client created.');
                 } else {
                     const err = await res.json().catch(() => ({}));
-                    alert(err.message || 'Could not save client.');
+                    notify(err.message || 'Could not save client.', 'error');
                 }
             } catch (error) {
                 console.error("Error saving client master:", error);
+                notify('Could not save client.', 'error');
             }
         };
 
@@ -1571,14 +1618,17 @@ createApp({
                     body: JSON.stringify(serviceForm.value)
                 });
                 if (res.ok) {
+                    const wasEditing = !!editingServiceId.value;
                     closeServiceModal();
                     await fetchData();
+                    notify(wasEditing ? 'Service updated.' : 'Service created.');
                 } else {
                     const err = await res.json().catch(() => ({}));
-                    alert(err.message || 'Could not save service.');
+                    notify(err.message || 'Could not save service.', 'error');
                 }
             } catch (error) {
                 console.error("Error saving service catalog template:", error);
+                notify('Could not save service.', 'error');
             }
         };
 
@@ -2741,8 +2791,20 @@ createApp({
             timerInterval = setInterval(() => { tick.value++; }, 1000);
             // Presence: heartbeat keeps "online" fresh; poll presence for the dashboard.
             setInterval(sendHeartbeat, 45000);
-            setInterval(() => { if (isLoggedIn.value) fetchPresence(); }, 30000);
-            setInterval(() => { if (isLoggedIn.value) fetchNotifications(); }, 30000);
+
+            // Auto-refresh all data every 5 seconds so counts, tasks, billing and
+            // notifications stay live. Skipped while a modal/form is open so it
+            // doesn't disrupt something the user is editing.
+            setInterval(() => {
+                if (isLoggedIn.value && !anyModalOpen()) fetchData();
+            }, 5000);
+
+            // Browser closed without logging out: bank the running timer so the
+            // work session doesn't keep counting. sendBeacon survives unload.
+            window.addEventListener('beforeunload', () => {
+                const rid = runningTaskId.value;
+                if (rid) { try { navigator.sendBeacon(`/api/tasks/${rid}/timer/pause`); } catch (e) { /* ignore */ } }
+            });
 
             const savedPalette = localStorage.getItem('ca_palette');
             if (savedPalette && palettes[savedPalette]) {
@@ -2975,6 +3037,10 @@ createApp({
             palettes,
             currentPalette,
             showPaletteDropdown,
+            showUserMenu,
+            toasts,
+            notify,
+            dismissToast,
             changePalette,
             isDark,
             toggleDark,
@@ -3060,6 +3126,7 @@ createApp({
             approvalBadge,
             taskView,
             tableTasks,
+            visibleTasks,
             // Calendar
             calMonth,
             calMonthLabel,

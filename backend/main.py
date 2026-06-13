@@ -1085,6 +1085,10 @@ def create_single_task():
     uid = session.get('user_id')
     role, _perms = current_role_and_perms()
     data['created_by'] = uid
+    # A user who can't assign tasks to others always owns what they create —
+    # it can't be left unassigned or pointed at someone else.
+    if not _perms.get('assign_task'):
+        data['assigned_to'] = uid
     db = get_db()
     result = crud.create_task(db, data)
 

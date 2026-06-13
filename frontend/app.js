@@ -36,6 +36,17 @@ createApp({
             !!vaultClientObj.value || !!contactClientObj.value
         );
 
+        // Close every modal / drawer (used by the Escape key handler).
+        const closeTopMostModal = () => {
+            showTaskModal.value = false; showClientModal.value = false; showUserModal.value = false;
+            showServiceModal.value = false; showProfileModal.value = false; showCalendarDayModal.value = false;
+            showBillingModal.value = false; showAssignModal.value = false; showImportModal.value = false;
+            showExportModal.value = false; showClearLogModal.value = false; showDeleteUserModal.value = false;
+            showRecurringModal.value = false; showCompletionModal.value = false;
+            vaultClientObj.value = null; contactClientObj.value = null;
+            approveMode.value = false; editingTaskId.value = null;
+        };
+
         const palettes = {
             default: {
                 name: "Monochrome (Default)",
@@ -2804,6 +2815,31 @@ createApp({
             window.addEventListener('beforeunload', () => {
                 const rid = runningTaskId.value;
                 if (rid) { try { navigator.sendBeacon(`/api/tasks/${rid}/timer/pause`); } catch (e) { /* ignore */ } }
+            });
+
+            // Close ANY open popup when clicking outside it:
+            //  - native <details> dropdowns (the Delete menus etc.)
+            //  - the header dropdowns (palette / user menu) handled via the root
+            //    @click, but close them here too for clicks that don't reach it.
+            document.addEventListener('click', (e) => {
+                document.querySelectorAll('details[open]').forEach(d => {
+                    if (!d.contains(e.target)) d.removeAttribute('open');
+                });
+                if (showPaletteDropdown.value || showUserMenu.value) {
+                    if (!e.target.closest('header')) {
+                        showPaletteDropdown.value = false;
+                        showUserMenu.value = false;
+                    }
+                }
+            });
+
+            // Escape closes any open modal/drawer and header dropdowns.
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                showPaletteDropdown.value = false;
+                showUserMenu.value = false;
+                document.querySelectorAll('details[open]').forEach(d => d.removeAttribute('open'));
+                closeTopMostModal();
             });
 
             const savedPalette = localStorage.getItem('ca_palette');

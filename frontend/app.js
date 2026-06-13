@@ -32,7 +32,7 @@ createApp({
             showServiceModal.value || showProfileModal.value || showCalendarDayModal.value ||
             showBillingModal.value || showAssignModal.value || showImportModal.value ||
             showExportModal.value || showClearLogModal.value || showDeleteUserModal.value ||
-            showRecurringModal.value || showCompletionModal.value ||
+            showRecurringModal.value || showCompletionModal.value || showFileTimesheetModal.value ||
             !!vaultClientObj.value || !!contactClientObj.value
         );
 
@@ -43,6 +43,7 @@ createApp({
             showBillingModal.value = false; showAssignModal.value = false; showImportModal.value = false;
             showExportModal.value = false; showClearLogModal.value = false; showDeleteUserModal.value = false;
             showRecurringModal.value = false; showCompletionModal.value = false;
+            showFileTimesheetModal.value = false;
             vaultClientObj.value = null; contactClientObj.value = null;
             approveMode.value = false; editingTaskId.value = null;
         };
@@ -177,6 +178,8 @@ createApp({
         const taskVisible = (t) => {
             if (canSeeAll.value) return true;
             const me = currentUser.value.id;
+            // A user always sees tasks they created, regardless of assignment.
+            if (t.created_by === me) return true;
             if (currentUser.value.role === 'Manager') {
                 if (t.assigned_to === me || t.delegated_to === me) return true;
                 if (!t.assigned_to) return true; // unassigned: managers can pick up / assign
@@ -198,6 +201,7 @@ createApp({
         // and lives in the Billed / Received Fees sections instead.
         const isBilling = (t) => t.billing_stage === 'Billed' || t.billing_stage === 'Received';
         const activeTasks = computed(() => visibleTasks.value.filter(t => !isBilling(t)));
+        const unbilledTasks = computed(() => tasks.value.filter(t => t.status === 'Completed' && !t.billing_stage));
         const billedTasks = computed(() => tasks.value.filter(t => t.billing_stage === 'Billed'));
         const receivedTasks = computed(() => tasks.value.filter(t => t.billing_stage === 'Received'));
 
@@ -212,7 +216,30 @@ createApp({
         // Search & Filters
         const taskSearch = ref('');
         const taskStatusFilter = ref('All');
+        const billedSearch = ref('');
+
+        const unbilledTasksFiltered = computed(() => {
+            const q = billedSearch.value.trim().toLowerCase();
+            let list = unbilledTasks.value;
+            if (q) list = list.filter(t => (t.client_name || '').toLowerCase().includes(q) || (t.service_name || '').toLowerCase().includes(q));
+            return list;
+        });
+        const billedTasksFiltered = computed(() => {
+            const q = billedSearch.value.trim().toLowerCase();
+            let list = billedTasks.value;
+            if (q) list = list.filter(t => (t.client_name || '').toLowerCase().includes(q) || (t.service_name || '').toLowerCase().includes(q));
+            return list;
+        });
+        const receivedTasksFiltered = computed(() => {
+            const q = billedSearch.value.trim().toLowerCase();
+            let list = receivedTasks.value;
+            if (q) list = list.filter(t => (t.client_name || '').toLowerCase().includes(q) || (t.service_name || '').toLowerCase().includes(q));
+            return list;
+        });
         const clientSearch = ref('');
+        const serviceSearch = ref('');
+        const servicePage = ref(1);
+        const servicesPerPage = ref(15);
 
         // Client List Pagination
         const clientPage = ref(1);
@@ -448,13 +475,15 @@ createApp({
         // A task's column is its assignment state first (Unassigned wins), then status.
         const columnKeyOf = (t) => {
             if (!t.assigned_to || String(t.assigned_to).trim() === '') return 'Unassigned';
+            if (t.billing_stage === 'Received') return 'Received';
+            if (t.billing_stage === 'Billed') return 'Billed';
             return t.status; // 'Working' | 'Pending' | 'Completed'
         };
 
         const boardColumns = computed(() => {
             const showUnassigned = canSeeAll.value || can('assign_task');
             const q = taskSearch.value.trim().toLowerCase();
-            let list = activeTasks.value;
+            let list = visibleTasks.value;
             if (q) list = list.filter(t => (t.client_name || '').toLowerCase().includes(q) || (t.service_name || '').toLowerCase().includes(q));
 
             const cols = [];
@@ -462,6 +491,8 @@ createApp({
             cols.push({ key: 'Pending', label: 'Pending', icon: 'fa-clock', accent: 'var(--color-stuck)' });
             cols.push({ key: 'Working', label: 'Working', icon: 'fa-bolt', accent: 'var(--color-goingon)' });
             cols.push({ key: 'Completed', label: 'Completed', icon: 'fa-circle-check', accent: 'var(--color-completed)' });
+            cols.push({ key: 'Billed', label: 'Billed', icon: 'fa-file-invoice-dollar', accent: '#3b82f6' });
+            cols.push({ key: 'Received', label: 'Received', icon: 'fa-circle-check', accent: '#10b981' });
             cols.forEach(c => c.tasks = []);
 
             const byKey = Object.fromEntries(cols.map(c => [c.key, c]));
@@ -475,6 +506,7 @@ createApp({
         // Native HTML5 drag & drop state
         const draggedTaskId = ref(null);
         const dragOverColumn = ref(null);
+        const dragOverBilledCol = ref(null);
 
         const onTaskDragStart = (task, ev) => {
             draggedTaskId.value = task.id;
@@ -496,15 +528,106 @@ createApp({
             if (!task) return;
             if (columnKeyOf(task) === colKey) return;
 
+            // Dropping into Billed or Received columns on Dashboard
+            if (colKey === 'Billed') {
+                if (!can('manage_billing')) { alert("You don't have permission to manage billing."); return; }
+                if (task.billing_stage === 'Received') {
+                    await moveBackToBilled(task);
+                } else {
+                    if (task.status !== 'Completed') {
+                        if (confirm("Task must be marked as Completed before billing. Mark as Completed and open billing modal?")) {
+                            await updateTaskStatus(task.id, 'Completed');
+                            openBillingModal(task);
+                        }
+                    } else {
+                        openBillingModal(task);
+                    }
+                }
+                return;
+            }
+
+            if (colKey === 'Received') {
+                if (!can('manage_billing')) { alert("You don't have permission to manage billing."); return; }
+                if (task.billing_stage !== 'Billed') {
+                    alert("Only already Billed tasks can be directly marked as Fees Received. Please drag to Billed first.");
+                } else {
+                    await markReceived(task);
+                }
+                return;
+            }
+
+            // Dropping from Billed/Received back to Unassigned/Pending/Working/Completed
+            if (task.billing_stage === 'Received') {
+                if (!can('manage_billing')) { alert("You don't have permission to manage billing."); return; }
+                if (confirm(`Move this task back to ${colKey}? This will reset received fees and billing status.`)) {
+                    await billingAction(task, 'unreceive');
+                    await billingAction(task, 'unbill');
+                    if (colKey === 'Unassigned') {
+                        await assignTask(task, null);
+                    } else {
+                        await updateTaskStatus(task.id, colKey);
+                    }
+                }
+                return;
+            }
+
+            if (task.billing_stage === 'Billed') {
+                if (!can('manage_billing')) { alert("You don't have permission to manage billing."); return; }
+                if (confirm(`Move this task back to ${colKey}? This will reset billing status.`)) {
+                    await billingAction(task, 'unbill');
+                    if (colKey === 'Unassigned') {
+                        await assignTask(task, null);
+                    } else {
+                        await updateTaskStatus(task.id, colKey);
+                    }
+                }
+                return;
+            }
+
+            // Standard transitions
             if (colKey === 'Unassigned') {
                 await assignTask(task, null);
                 return;
             }
-            // Dropping into a status column
             if (!task.assigned_to || String(task.assigned_to).trim() === '') {
-                openAssignModal(task, colKey);   // must pick an assignee first
+                openAssignModal(task, colKey);
             } else {
                 await updateTaskStatus(task.id, colKey);
+            }
+        };
+
+        const onBilledColumnDrop = async (colKey) => {
+            const id = draggedTaskId.value;
+            dragOverBilledCol.value = null;
+            draggedTaskId.value = null;
+            if (id == null) return;
+            const task = tasks.value.find(t => t.id === id);
+            if (!task) return;
+            if (columnKeyOf(task) === colKey) return;
+
+            const currentStage = task.billing_stage || '';
+
+            if (colKey === 'Completed') {
+                if (currentStage === 'Billed') {
+                    await moveBackToCompleted(task);
+                } else if (currentStage === 'Received') {
+                    if (confirm('Move this task back to Completed? This will reset received fees and billing status.')) {
+                        await billingAction(task, 'unreceive');
+                        await billingAction(task, 'unbill');
+                    }
+                }
+            } else if (colKey === 'Billed') {
+                if (currentStage === 'Received') {
+                    await moveBackToBilled(task);
+                } else {
+                    openBillingModal(task);
+                }
+            } else if (colKey === 'Received') {
+                if (currentStage === 'Billed') {
+                    await markReceived(task);
+                } else {
+                    alert('Task must be billed before marking fees as received. Drag to Billed first.');
+                }
             }
         };
 
@@ -568,8 +691,17 @@ createApp({
         });
 
         const filteredClients = computed(() => {
-            // Clients (and services) are visible to every logged-in user, regardless of role.
-            const list = clients.value;
+            // Employees only see clients for which they have been assigned a task.
+            // Admin / Partner / Manager see all clients.
+            let list = clients.value;
+            if (currentUser.value.role === 'Employee') {
+                const assignedClientIds = new Set(
+                    tasks.value
+                        .filter(t => t.assigned_to === currentUser.value.id || t.delegated_to === currentUser.value.id)
+                        .map(t => t.client_id)
+                );
+                list = list.filter(c => assignedClientIds.has(c.id));
+            }
             if (!clientSearch.value) return list;
             const search = clientSearch.value.toLowerCase();
             return list.filter(c => {
@@ -589,6 +721,28 @@ createApp({
 
         const totalClientPages = computed(() => {
             return Math.ceil(filteredClients.value.length / clientsPerPage.value) || 1;
+        });
+
+        // Services filtering and pagination
+        const filteredServices = computed(() => {
+            let list = services.value;
+            if (!serviceSearch.value) return list;
+            const search = serviceSearch.value.toLowerCase();
+            return list.filter(s => {
+                return s.name.toLowerCase().includes(search) || 
+                       (s.description && s.description.toLowerCase().includes(search)) || 
+                       (s.custom_id && s.custom_id.toLowerCase().includes(search));
+            });
+        });
+
+        const paginatedServices = computed(() => {
+            const start = (servicePage.value - 1) * servicesPerPage.value;
+            const end = start + servicesPerPage.value;
+            return filteredServices.value.slice(start, end);
+        });
+
+        const totalServicePages = computed(() => {
+            return Math.ceil(filteredServices.value.length / servicesPerPage.value) || 1;
         });
 
         // Contact Directory Filters: Accountant-Only visibility filters for Employees
@@ -628,6 +782,7 @@ createApp({
             tasks.value = [];
             clients.value = [];
             currentTab.value = 'dashboard';
+            currentUserLoggedSecondsToday.value = 0;
         };
 
         const activityLogs = ref([]);
@@ -780,6 +935,7 @@ createApp({
                 });
                 if (res.ok) {
                     calEventForm.value = blankCalEvent(calSelectedDate.value);
+                    showCalendarDayModal.value = false;
                     await fetchCalendar();
                 } else {
                     const e = await res.json().catch(() => ({}));
@@ -923,10 +1079,31 @@ createApp({
 
         // ===================== Presence (who's online / working) =====================
         const presence = ref([]);
+        const currentUserLoggedSecondsToday = ref(0);
+        const initLocalLoggedTime = () => {
+            if (currentUser.value && currentUser.value.id) {
+                const dateStr = new Date().toISOString().slice(0, 10);
+                const localVal = parseInt(localStorage.getItem(`ca_logged_seconds_${currentUser.value.id}_${dateStr}`)) || 0;
+                currentUserLoggedSecondsToday.value = Math.max(currentUserLoggedSecondsToday.value, localVal);
+            }
+        };
         const fetchPresence = async () => {
             try {
                 const res = await apiFetch('/api/presence');
-                if (res.ok) presence.value = await res.json();
+                if (res.ok) {
+                    const data = await res.json();
+                    presence.value = data;
+                    if (currentUser.value && currentUser.value.id) {
+                        const me = data.find(p => p.user_id === currentUser.value.id);
+                        if (me) {
+                            if (me.logged_seconds_today > currentUserLoggedSecondsToday.value) {
+                                currentUserLoggedSecondsToday.value = me.logged_seconds_today;
+                                const dateStr = new Date().toISOString().slice(0, 10);
+                                localStorage.setItem(`ca_logged_seconds_${currentUser.value.id}_${dateStr}`, currentUserLoggedSecondsToday.value);
+                            }
+                        }
+                    }
+                }
             } catch (e) { /* ignore */ }
         };
         const sendHeartbeat = async () => {
@@ -934,6 +1111,19 @@ createApp({
             try { await apiFetch('/api/heartbeat', { method: 'POST' }); } catch (e) { /* ignore */ }
         };
         const onlineUsers = computed(() => presence.value.filter(p => p.online));
+
+        // ===================== File Timesheet Modal =====================
+        const showFileTimesheetModal = ref(false);
+        const openFileTimesheetModal = () => {
+            tsFileDate.value = today;
+            tsFileDesc.value = '';
+            tsFileMsg.value = '';
+            showFileTimesheetModal.value = true;
+        };
+        const closeFileTimesheetModal = () => {
+            showFileTimesheetModal.value = false;
+            tsFileMsg.value = '';
+        };
 
         // ===================== Profile / Change Password =====================
         const showProfileModal = ref(false);
@@ -989,6 +1179,7 @@ createApp({
                     const data = await res.json();
                     currentUser.value = data.user;
                     isLoggedIn.value = true;
+                    initLocalLoggedTime();
                     loginForm.value = { username: '', password: '' };
                     await fetchData();
                     currentTab.value = 'dashboard';
@@ -1664,7 +1855,16 @@ createApp({
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ log_date: tsFileDate.value, description: tsFileDesc.value })
                 });
-                if (res.ok) { tsFileMsg.value = 'Timesheet filed.'; tsFileDesc.value = ''; await fetchTsReport(); setTimeout(() => tsFileMsg.value = '', 3000); }
+                if (res.ok) {
+                    tsFileMsg.value = 'Timesheet filed.';
+                    tsFileDesc.value = '';
+                    notify('Timesheet filed successfully!', 'success');
+                    await fetchTsReport();
+                    setTimeout(() => {
+                        showFileTimesheetModal.value = false;
+                        tsFileMsg.value = '';
+                    }, 1000);
+                }
                 else { const e = await res.json().catch(() => ({})); tsFileMsg.value = e.message || 'Could not file timesheet.'; }
             } catch (e) { tsFileMsg.value = 'Could not file timesheet.'; }
             finally { tsFiling.value = false; }
@@ -2799,7 +2999,14 @@ createApp({
 
         onMounted(async () => {
             // Live-tick running timers every second
-            timerInterval = setInterval(() => { tick.value++; }, 1000);
+            timerInterval = setInterval(() => {
+                tick.value++;
+                if (isLoggedIn.value && currentUser.value && currentUser.value.id) {
+                    currentUserLoggedSecondsToday.value++;
+                    const dateStr = new Date().toISOString().slice(0, 10);
+                    localStorage.setItem(`ca_logged_seconds_${currentUser.value.id}_${dateStr}`, currentUserLoggedSecondsToday.value);
+                }
+            }, 1000);
             // Presence: heartbeat keeps "online" fresh; poll presence for the dashboard.
             setInterval(sendHeartbeat, 45000);
 
@@ -2859,6 +3066,7 @@ createApp({
                     const data = await meRes.json();
                     currentUser.value = data.user;
                     isLoggedIn.value = true;
+                    initLocalLoggedTime();
                     await fetchData();
                 }
             } catch (e) {
@@ -2888,6 +3096,9 @@ createApp({
             showClientModal,
             showUserModal,
             showServiceModal,
+            showFileTimesheetModal,
+            openFileTimesheetModal,
+            closeFileTimesheetModal,
             showBulkEngine,
             vaultClientObj,
             contactClientObj,
@@ -2918,6 +3129,7 @@ createApp({
             setDashCard,
             dashTasksByUser,
             presence,
+            currentUserLoggedSecondsToday,
             onlineUsers,
             // Kanban board + drag & drop
             boardColumns,
@@ -2940,9 +3152,16 @@ createApp({
             closeAssignModal,
             confirmAssignModal,
             filteredTasks,
+            clientPage,
             filteredClients,
             paginatedClients,
             totalClientPages,
+            serviceSearch,
+            servicePage,
+            servicesPerPage,
+            filteredServices,
+            paginatedServices,
+            totalServicePages,
             filteredContactsList,
             filteredTimesheets,
             activityLogs,
@@ -2996,6 +3215,7 @@ createApp({
             deleteTask,
             deleteClient,
             // Billing pipeline
+            unbilledTasks,
             billedTasks,
             receivedTasks,
             billedTotals,
@@ -3016,6 +3236,12 @@ createApp({
             markReceived,
             moveBackToBilled,
             moveBackToCompleted,
+            billedSearch,
+            unbilledTasksFiltered,
+            billedTasksFiltered,
+            receivedTasksFiltered,
+            dragOverBilledCol,
+            onBilledColumnDrop,
             // Delete-user-with-reassignment
             showDeleteUserModal,
             deleteUserTarget,
@@ -3056,6 +3282,7 @@ createApp({
             tsRange,
             fetchTsReport,
             fmtSecs,
+            fmtHMS,
             tsTime,
             flagInfo,
             exportTsReport,

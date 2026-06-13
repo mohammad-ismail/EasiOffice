@@ -108,7 +108,7 @@
                         <i class="fa-solid fa-user-group"></i>
                         <span v-show="!isSidebarCollapsed">Clients</span>
                     </a>
-                    <a href="#" @click="currentTab = 'services'" class="nav-link" :class="{ active: currentTab === 'services' }" :title="isSidebarCollapsed ? 'Services' : ''">
+                    <a href="#" v-if="can('manage_services')" @click="currentTab = 'services'" class="nav-link" :class="{ active: currentTab === 'services' }" :title="isSidebarCollapsed ? 'Services' : ''">
                         <i class="fa-solid fa-layer-group"></i>
                         <span v-show="!isSidebarCollapsed">Services</span>
                     </a>
@@ -127,7 +127,7 @@
                     <a href="#" v-if="can('manage_billing')" @click="currentTab = 'billed'" class="nav-link" :class="{ active: currentTab === 'billed' }" :title="isSidebarCollapsed ? 'Billed' : ''">
                         <i class="fa-solid fa-file-invoice-dollar"></i>
                         <span v-show="!isSidebarCollapsed">Billed</span>
-                        <span v-show="!isSidebarCollapsed && billedTasks.length" class="ml-auto text-[11px] font-semibold bg-black/10 rounded-full px-2 py-0.5">{{ billedTasks.length }}</span>
+                        <span v-show="!isSidebarCollapsed && (unbilledTasks.length + billedTasks.length)" class="ml-auto text-[11px] font-semibold bg-black/10 rounded-full px-2 py-0.5">{{ unbilledTasks.length + billedTasks.length }}</span>
                     </a>
                     <a href="#" v-if="can('manage_billing')" @click="currentTab = 'received'" class="nav-link" :class="{ active: currentTab === 'received' }" :title="isSidebarCollapsed ? 'Received Fees' : ''">
                         <i class="fa-solid fa-circle-check"></i>
@@ -189,6 +189,13 @@
                             </div>
                         </div>
 
+                        <!-- Total logged-in time today widget (top bar) -->
+                        <div v-if="currentTab === 'dashboard' || currentTab === 'timesheet'" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-150" title="Time spent on the app today">
+                            <i class="fa-solid fa-clock text-indigo-500 text-[13px]"></i>
+                            <span class="hidden md:inline text-[12px] text-indigo-800 font-semibold">Today:</span>
+                            <span class="font-mono font-semibold text-indigo-700 text-[13px] bg-white px-2 py-0.5 rounded-full shadow-xs border border-indigo-50">{{ fmtHMS(currentUserLoggedSecondsToday) }}</span>
+                        </div>
+
                         <!-- Running timer (top bar, before the notification bell) -->
                         <div v-if="activeTimerTask" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200">
                             <i class="fa-solid fa-stopwatch text-accent text-[13px]"></i>
@@ -239,6 +246,14 @@
                                 <span class="font-mono font-semibold text-gray-800 text-[15px]">{{ activeTimerDisplay }}</span>
                                 <button @click="pauseTaskTimer(activeTimerTask)" class="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white transition" style="background: var(--color-stuck);"><i class="fa-solid fa-pause text-[11px] mr-1"></i> Pause</button>
                             </div>
+
+                            <!-- Time Logged Today Widget -->
+                            <div class="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-xl shadow-sm">
+                                <i class="fa-solid fa-clock text-indigo-500 text-[14px]"></i>
+                                <span class="text-[13px] font-semibold text-indigo-850">Time Logged Today:</span>
+                                <span class="text-sm font-mono font-bold text-indigo-700 bg-white px-2 py-0.5 rounded shadow-sm border border-indigo-50">{{ fmtHMS(currentUserLoggedSecondsToday) }}</span>
+                            </div>
+
                             <button v-if="isAdminOrPartner" @click="openExportModal('dashboard')" class="ml-auto px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
                                 <i class="fa-solid fa-file-export"></i> Export Full Report
                             </button>
@@ -272,7 +287,10 @@
                                     <span class="w-2.5 h-2.5 rounded-full shrink-0" :class="p.online ? 'bg-emerald-500' : 'bg-gray-300'"></span>
                                     <div class="min-w-0 flex-1">
                                         <div class="text-[13.5px] font-semibold text-gray-800 truncate">{{ p.full_name }}</div>
-                                        <div class="text-[11px] text-gray-400">{{ p.role }}</div>
+                                        <div class="text-[11px] text-gray-400">
+                                            <span>{{ p.role }}</span>
+                                            <span v-if="p.logged_seconds_today" class="text-gray-500 font-mono text-[10.5px]"> · Today: {{ fmtHMS(p.logged_seconds_today) }}</span>
+                                        </div>
                                     </div>
                                     <span v-if="p.working" class="pill pill-working text-[11px] shrink-0"><i class="fa-solid fa-stopwatch mr-1"></i>Working</span>
                                     <span v-else-if="p.online" class="text-[11px] text-emerald-600 font-semibold shrink-0">Online</span>
@@ -498,7 +516,6 @@
                                             <span class="text-[12.5px] text-gray-500 inline-flex items-center gap-1.5 truncate">
                                                 <i class="fa-solid fa-circle-user text-gray-400"></i>{{ task.assigned_to_name || 'Unassigned' }}<template v-if="task.delegated_to_name"> <i class="fa-solid fa-arrow-right-long text-gray-300 mx-0.5"></i> {{ task.delegated_to_name }}</template>
                                             </span>
-                                            <!-- Completed cards: log time + (optionally) bill -->
                                             <div v-if="col.key === 'Completed'" class="flex items-center gap-1 shrink-0">
                                                 <button @click="openLogModal(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-gray-600 hover:text-white hover:bg-accent transition inline-flex items-center gap-1.5 border border-gray-200" title="Add to time log">
                                                     <i class="fa-regular fa-clock text-[10px]"></i> Log
@@ -506,6 +523,31 @@
                                                 <button v-if="can('manage_billing')" @click="openBillingModal(task)" class="px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-white inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 transition" title="Bill this task">
                                                     <i class="fa-solid fa-file-invoice-dollar text-[10px]"></i> Billed
                                                 </button>
+                                            </div>
+                                            <!-- Billed cards -->
+                                            <div v-else-if="col.key === 'Billed'" class="w-full flex flex-col gap-2 mt-2 pt-2 border-t border-gray-100">
+                                                <div v-if="can('manage_billing')" class="grid grid-cols-3 gap-1 text-center bg-gray-50 p-1.5 rounded-lg border border-gray-100">
+                                                    <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">Billed</p><p class="text-[12px] font-bold text-gray-800 mt-0.5">{{ fmtMoney(task.billed_amount) }}</p></div>
+                                                    <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">GST</p><p class="text-[12px] font-bold text-gray-800 mt-0.5">{{ fmtMoney(task.gst_amount) }}</p></div>
+                                                    <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">Total</p><p class="text-[12px] font-bold text-emerald-700 mt-0.5">{{ fmtMoney(task.total_amount) }}</p></div>
+                                                </div>
+                                                <div v-else class="text-center py-1 bg-blue-50 text-blue-600 rounded-md text-[11.5px] font-semibold"><i class="fa-solid fa-file-invoice-dollar"></i> Task Billed</div>
+                                                <div class="flex items-center gap-1.5" v-if="can('manage_billing')">
+                                                    <button @click="markReceived(task)" class="flex-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[12.5px] font-semibold inline-flex items-center justify-center gap-1 transition"><i class="fa-solid fa-circle-check"></i> Received</button>
+                                                    <button @click="moveBackToCompleted(task)" class="px-2 py-1.5 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-lg text-[12.5px] font-semibold transition" title="Move back to Completed"><i class="fa-solid fa-rotate-left"></i></button>
+                                                </div>
+                                            </div>
+                                            <!-- Received cards -->
+                                            <div v-else-if="col.key === 'Received'" class="w-full flex flex-col gap-2 mt-2 pt-2 border-t border-gray-100">
+                                                <div v-if="can('manage_billing')" class="grid grid-cols-3 gap-1 text-center bg-gray-50 p-1.5 rounded-lg border border-gray-100">
+                                                    <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">Billed</p><p class="text-[12px] font-bold text-gray-800 mt-0.5">{{ fmtMoney(task.billed_amount) }}</p></div>
+                                                    <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">GST</p><p class="text-[12px] font-bold text-gray-800 mt-0.5">{{ fmtMoney(task.gst_amount) }}</p></div>
+                                                    <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">Total</p><p class="text-[12px] font-bold text-emerald-700 mt-0.5">{{ fmtMoney(task.total_amount) }}</p></div>
+                                                </div>
+                                                <div v-else class="text-center py-1 bg-emerald-50 text-emerald-600 rounded-md text-[11.5px] font-semibold"><i class="fa-solid fa-circle-check"></i> Paid / Completed</div>
+                                                <div class="flex items-center gap-1.5" v-if="can('manage_billing')">
+                                                    <button @click="moveBackToBilled(task)" class="flex-1 px-2.5 py-1.5 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-lg text-[12.5px] font-semibold transition inline-flex items-center justify-center gap-1.5" title="Move back to Billed"><i class="fa-solid fa-rotate-left"></i> Undo</button>
+                                                </div>
                                             </div>
                                             <template v-else-if="task.assigned_to">
                                                 <div class="flex items-center gap-1 shrink-0">
@@ -591,8 +633,7 @@
                                             <th class="py-3 px-3">Entity</th>
                                             <th class="py-3 px-3">PAN</th>
                                             <th class="py-3 px-3">GSTIN</th>
-                                            <th class="py-3 px-3">Cabinet</th>
-                                            <th class="py-3 px-3 text-right">Actions</th>
+                                            <th class="py-3 px-3 text-center">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-50">
@@ -604,15 +645,13 @@
                                             <td class="py-2.5 px-3 text-gray-600">{{ client.entity_type }}</td>
                                             <td class="py-2.5 px-3 font-mono uppercase text-gray-700">{{ client.pan }}</td>
                                             <td class="py-2.5 px-3 font-mono uppercase text-gray-500">{{ client.gstin || 'N/A' }}</td>
-                                            <td class="py-2.5 px-3 text-gray-500"><i class="fa-solid fa-folder-open text-amber-500 mr-1"></i>{{ client.physical_folder_location }}</td>
-                                            <td class="py-2.5 px-3 text-right whitespace-nowrap">
+                                            <td class="py-2.5 px-3 text-center whitespace-nowrap">
                                                 <button @click="openContactsForClient(client)" class="text-accent hover:bg-accent-light p-1.5 rounded-lg" title="Contacts"><i class="fa-solid fa-address-book text-[12px]"></i></button>
-                                                <button @click="openVaultForClient(client)" class="text-gray-700 hover:bg-gray-100 p-1.5 rounded-lg" title="Vault"><i class="fa-solid fa-key text-[12px]"></i></button>
                                                 <button v-if="can('manage_clients')" @click="startEditClient(client)" class="text-gray-500 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg" title="Edit"><i class="fa-solid fa-pen text-[12px]"></i></button>
                                                 <button v-if="can('delete_client')" @click="deleteClient(client)" class="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg" title="Delete"><i class="fa-solid fa-trash-can text-[12px]"></i></button>
                                             </td>
                                         </tr>
-                                        <tr v-if="filteredClients.length === 0"><td colspan="9" class="py-14 text-center text-gray-400 italic">No clients yet.</td></tr>
+                                        <tr v-if="filteredClients.length === 0"><td colspan="8" class="py-14 text-center text-gray-400 italic">No clients yet.</td></tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -641,11 +680,10 @@
                                     <div><span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wide block mb-0.5">Entity</span><span class="text-gray-700 font-medium">{{ client.entity_type }}</span></div>
                                     <div><span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wide block mb-0.5">PAN</span><span class="text-gray-700 font-mono font-semibold uppercase">{{ client.pan }}</span></div>
                                     <div><span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wide block mb-0.5">GSTIN</span><span class="text-gray-700 font-mono uppercase">{{ client.gstin || 'N/A' }}</span></div>
-                                    <div><span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wide block mb-0.5">Cabinet</span><span class="text-gray-700"><i class="fa-solid fa-folder-open text-amber-500 mr-1"></i>{{ client.physical_folder_location }}</span></div>
+
                                 </div>
                                 <div class="flex items-center gap-2 border-t border-gray-100 pt-4">
                                     <button @click="openContactsForClient(client)" class="flex-1 px-3 py-2 bg-accent-light text-accent hover:bg-accent hover:text-white rounded-lg text-[13.5px] font-semibold transition inline-flex items-center justify-center gap-1.5"><i class="fa-solid fa-address-book"></i> Contacts</button>
-                                    <button @click="openVaultForClient(client)" class="flex-1 px-3 py-2 bg-gray-800 hover:bg-black text-white rounded-lg text-[13.5px] font-semibold transition inline-flex items-center justify-center gap-1.5"><i class="fa-solid fa-key text-[12px]"></i> Vault</button>
                                 </div>
                             </div>
                             <div v-if="filteredClients.length === 0" class="col-span-full text-center py-14 text-gray-400 italic app-card">No clients yet.</div>
@@ -667,12 +705,18 @@
                     </main>
 
                     <!-- 4. SERVICES CATALOG TAB -->
-                    <main v-if="currentTab === 'services'" class="p-8 space-y-6 max-w-7xl mx-auto">
-                        <!-- Total count -->
-                        <div class="app-card px-5 py-3 inline-flex items-center gap-2.5">
-                            <i class="fa-solid fa-layer-group text-accent"></i>
-                            <span class="text-[13px] text-gray-500 font-semibold uppercase tracking-wide">Total Services</span>
-                            <span class="text-2xl font-semibold text-gray-800">{{ services.length }}</span>
+                    <main v-if="currentTab === 'services' && can('manage_services')" class="p-8 space-y-6 max-w-7xl mx-auto">
+                        <!-- Total count and search -->
+                        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <div class="app-card px-5 py-3 inline-flex items-center gap-2.5">
+                                <i class="fa-solid fa-layer-group text-accent"></i>
+                                <span class="text-[13px] text-gray-500 font-semibold uppercase tracking-wide">Total Services</span>
+                                <span class="text-2xl font-semibold text-gray-800">{{ filteredServices.length }}</span>
+                            </div>
+                            <div class="relative w-full sm:w-64">
+                                <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                <input v-model="serviceSearch" type="text" placeholder="Search services..." class="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm shadow-sm">
+                            </div>
                         </div>
                         <div class="flex items-center justify-between">
                             <div>
@@ -728,7 +772,7 @@
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-50">
-                                        <tr v-for="srv in services" :key="srv.id" class="hover:bg-gray-50/50">
+                                        <tr v-for="srv in paginatedServices" :key="srv.id" class="hover:bg-gray-50/50">
                                             <td v-if="can('delete_service')" class="py-2.5 px-3"><input type="checkbox" :checked="isServiceSelected(srv.id)" @change="toggleServiceSelected(srv.id)"></td>
                                             <td class="py-2.5 px-3 font-mono text-[12.5px] text-gray-500">{{ srv.custom_id || '—' }}</td>
                                             <td class="py-2.5 px-3 font-semibold text-gray-800">{{ srv.name }}</td>
@@ -741,14 +785,14 @@
                                                 <button v-if="can('delete_service')" @click="deleteService(srv)" class="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg" title="Delete"><i class="fa-solid fa-trash-can text-[12px]"></i></button>
                                             </td>
                                         </tr>
-                                        <tr v-if="services.length === 0"><td colspan="7" class="py-14 text-center text-gray-400 italic">No services yet.</td></tr>
+                                        <tr v-if="filteredServices.length === 0"><td colspan="7" class="py-14 text-center text-gray-400 italic">No services found.</td></tr>
                                     </tbody>
                                 </table>
                             </div>
                         </div>
 
                         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
-                            <div v-for="srv in services" :key="srv.id" class="bg-white rounded-2xl shadow-sm border border-gray-150 p-4 flex flex-col justify-between hover:shadow-md transition duration-300 relative overflow-hidden group border-t-4 border-accent">
+                            <div v-for="srv in paginatedServices" :key="srv.id" class="bg-white rounded-2xl shadow-sm border border-gray-150 p-4 flex flex-col justify-between hover:shadow-md transition duration-300 relative overflow-hidden group border-t-4 border-accent">
                                 <div>
                                     <div class="flex justify-between items-start mb-3">
                                         <h4 class="text-base font-bold text-gray-850 truncate max-w-xs leading-snug flex items-center gap-1.5">
@@ -786,6 +830,21 @@
                                     </button>
                                     <span v-else class="text-[10px] text-gray-400 italic font-medium"><i class="fa-solid fa-check mr-1 text-green-500"></i> Catalog Verified</span>
                                 </div>
+                            </div>
+                            <div v-if="filteredServices.length === 0" class="col-span-full text-center py-14 text-gray-400 italic app-card">No services found.</div>
+                        </div>
+
+                        <!-- Pagination -->
+                        <div v-if="filteredServices.length > servicesPerPage" class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <span class="text-[13px] text-gray-500 font-medium">
+                                Showing <span class="font-semibold text-gray-700">{{ (servicePage - 1) * servicesPerPage + 1 }}</span> to
+                                <span class="font-semibold text-gray-700">{{ Math.min(servicePage * servicesPerPage, filteredServices.length) }}</span> of
+                                <span class="font-semibold text-gray-700">{{ filteredServices.length }}</span> services
+                            </span>
+                            <div class="flex items-center gap-1.5 bg-white border border-gray-200 p-1 rounded-xl shadow-sm">
+                                <button @click="servicePage = Math.max(1, servicePage - 1)" :disabled="servicePage === 1" class="px-3.5 py-1.5 rounded-lg text-[13px] font-semibold transition" :class="servicePage === 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-100'"><i class="fa-solid fa-angle-left mr-1"></i> Prev</button>
+                                <span class="px-3 py-1 font-semibold text-sm bg-gray-50 rounded text-gray-800 border border-gray-100 min-w-[2rem] text-center">{{ servicePage }}</span>
+                                <button @click="servicePage = Math.min(totalServicePages, servicePage + 1)" :disabled="servicePage === totalServicePages" class="px-3.5 py-1.5 rounded-lg text-[13px] font-semibold transition" :class="servicePage === totalServicePages ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-100'">Next <i class="fa-solid fa-angle-right ml-1"></i></button>
                             </div>
                         </div>
                     </main>
@@ -856,120 +915,112 @@
 
                     <!-- 6. TIMESHEET TAB -->
                     <main v-if="currentTab === 'timesheet'" class="p-6 max-w-7xl mx-auto space-y-5">
-                        <!-- Submission colour legend -->
-                        <div class="app-card p-3.5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12.5px]">
-                            <span class="font-semibold text-gray-600">Submission status:</span>
-                            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500"></span> On time (filed on the day)</span>
-                            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-500"></span> Late — filed after the day had passed</span>
-                            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-400"></span> Early — filed before the day arrived</span>
-                        </div>
-
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                            <!-- File Timesheet -->
-                            <div class="app-card p-5 self-start lg:col-span-1">
-                                <h3 class="text-[16px] font-semibold text-gray-800 flex items-center gap-2 mb-4"><i class="fa-solid fa-square-plus text-accent"></i> File Timesheet</h3>
-                                <form @submit.prevent="fileTimesheet2" class="space-y-4">
-                                    <div>
-                                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Date</label>
-                                        <input v-model="tsFileDate" type="date" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Details / Work Description <span class="font-medium normal-case text-gray-400">(optional)</span></label>
-                                        <textarea v-model="tsFileDesc" rows="4" placeholder="Summary of the day's work…" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm resize-none"></textarea>
-                                    </div>
-                                    <p class="text-[12px] text-gray-400">Time spent on each task is recorded automatically from your timers — no need to enter it.</p>
-                                    <button type="submit" :disabled="tsFiling" class="w-full bg-primary hover:bg-primary-hover text-white font-bold py-3 rounded-xl text-sm transition shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50">
-                                        <i class="fa-solid" :class="tsFiling ? 'fa-spinner fa-spin' : 'fa-circle-check'"></i> File Timesheet
-                                    </button>
-                                    <p v-if="tsFileMsg" class="text-center text-[13px] font-semibold text-emerald-600">{{ tsFileMsg }}</p>
-                                </form>
+                        <!-- Sticky header container (visible when scrolling list) -->
+                        <div class="sticky -top-6 z-20 bg-gray-50/95 backdrop-blur-md -mx-6 px-6 py-4 border-b border-gray-150 space-y-4">
+                            <!-- Top header row with Time Logged Today and submission legend -->
+                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div class="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-xl shadow-sm max-w-max">
+                                    <i class="fa-solid fa-clock text-indigo-500 text-[14px]"></i>
+                                    <span class="text-[13px] font-semibold text-indigo-850">Time Logged Today:</span>
+                                    <span class="text-sm font-mono font-bold text-indigo-700 bg-white px-2 py-0.5 rounded shadow-sm border border-indigo-50">{{ fmtHMS(currentUserLoggedSecondsToday) }}</span>
+                                </div>
+                                
+                                <div class="app-card p-3.5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12.5px] bg-white border border-gray-150 flex-1 md:justify-end">
+                                    <span class="font-semibold text-gray-600">Submission status:</span>
+                                    <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500"></span> On time (filed on the day)</span>
+                                    <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-500"></span> Late — filed after the day had passed</span>
+                                    <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-400"></span> Early — filed before the day arrived</span>
+                                </div>
                             </div>
 
-                            <!-- Report -->
-                            <div class="lg:col-span-2 space-y-4">
-                                <!-- Controls -->
-                                <div class="app-card p-4 flex flex-wrap items-end gap-3">
-                                    <div>
-                                        <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Period</label>
-                                        <select v-model="tsPeriod" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white">
-                                            <option value="range">Custom days</option>
-                                            <option value="weekly">Weekly</option>
-                                            <option value="monthly">Monthly</option>
-                                            <option value="quarterly">Quarterly</option>
-                                            <option value="halfyearly">Half-yearly</option>
-                                            <option value="yearly">Yearly</option>
-                                        </select>
-                                    </div>
-                                    <template v-if="tsPeriod==='range'">
-                                        <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">From</label><input v-model="tsFrom" type="date" class="rounded-xl border border-gray-200 p-2 text-[13.5px]"></div>
-                                        <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">To</label><input v-model="tsTo" type="date" class="rounded-xl border border-gray-200 p-2 text-[13.5px]"></div>
-                                    </template>
-                                    <div v-if="tsPeriod==='weekly'"><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Week of</label><input v-model="tsWeekDate" type="date" class="rounded-xl border border-gray-200 p-2 text-[13.5px]"></div>
-                                    <template v-if="tsPeriod==='monthly'">
-                                        <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Up to month</label><input v-model="tsMonth" type="month" class="rounded-xl border border-gray-200 p-2 text-[13.5px]"></div>
-                                        <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1"># months</label><input v-model.number="tsMonthCount" type="number" min="1" max="36" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-20"></div>
-                                    </template>
-                                    <template v-if="tsPeriod==='quarterly'">
-                                        <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Quarter</label><select v-model="tsQuarter" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white"><option value="Q1">Q1 (Jan–Mar)</option><option value="Q2">Q2 (Apr–Jun)</option><option value="Q3">Q3 (Jul–Sep)</option><option value="Q4">Q4 (Oct–Dec)</option></select></div>
-                                        <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Year</label><input v-model="tsYear" type="number" min="2000" max="2099" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-24"></div>
-                                    </template>
-                                    <template v-if="tsPeriod==='halfyearly'">
-                                        <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Half</label><select v-model="tsHalf" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white"><option value="H1">H1 (Jan–Jun)</option><option value="H2">H2 (Jul–Dec)</option></select></div>
-                                        <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Year</label><input v-model="tsYear" type="number" min="2000" max="2099" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-24"></div>
-                                    </template>
-                                    <template v-if="tsPeriod==='yearly'">
-                                        <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Up to year</label><input v-model="tsYear" type="number" min="2000" max="2099" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-24"></div>
-                                        <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1"># years</label><input v-model.number="tsYearCount" type="number" min="1" max="10" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-20"></div>
-                                    </template>
-                                    <div v-if="canPickUser">
-                                        <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Staff</label>
-                                        <select v-model="tsReportUser" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white min-w-[140px]">
-                                            <option value="all">All users</option>
-                                            <option v-for="u in usersList" :key="u.id" :value="String(u.id)">{{ u.full_name }}</option>
-                                        </select>
-                                    </div>
-                                    <button @click="exportTsReport" class="ml-auto px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[13.5px] shadow-sm transition flex items-center gap-1.5 whitespace-nowrap"><i class="fa-solid fa-file-export"></i> Export</button>
+                            <!-- Controls -->
+                            <div class="app-card p-4 flex flex-wrap items-end gap-3">
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Period</label>
+                                    <select v-model="tsPeriod" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white">
+                                        <option value="range">Custom days</option>
+                                        <option value="weekly">Weekly</option>
+                                        <option value="monthly">Monthly</option>
+                                        <option value="quarterly">Quarterly</option>
+                                        <option value="halfyearly">Half-yearly</option>
+                                        <option value="yearly">Yearly</option>
+                                    </select>
                                 </div>
-
-                                <!-- Daily report -->
-                                <div v-if="tsReport.length" class="space-y-4">
-                                    <div v-for="day in tsReport" :key="day.user_id + '|' + day.date" class="app-card overflow-hidden">
-                                        <div class="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2" :class="{ 'bg-red-50/40': day.submission_flag==='late', 'bg-amber-50/40': day.submission_flag==='early' }">
-                                            <div class="flex items-center gap-2 flex-wrap">
-                                                <span class="font-semibold text-gray-800 text-[14px]">{{ day.date }}</span>
-                                                <span v-if="canPickUser" class="text-[13px] text-gray-500">· {{ day.full_name }}</span>
-                                                <span class="text-[11px] px-2 py-0.5 rounded-full font-semibold" :class="flagInfo(day.submission_flag).cls">{{ flagInfo(day.submission_flag).label }}</span>
-                                            </div>
-                                            <div class="text-[12.5px] text-gray-500 flex items-center gap-2 flex-wrap">
-                                                <span><i class="fa-regular fa-clock mr-1"></i>Logged in {{ fmtSecs(day.logged_seconds) }}</span>
-                                                <span v-if="day.first_login" class="text-gray-400 font-mono">({{ tsTime(day.first_login) }} → {{ day.last_logout ? tsTime(day.last_logout) : '…' }})</span>
-                                            </div>
-                                        </div>
-                                        <div v-if="day.description" class="px-4 py-2 text-[13px] text-gray-600 border-b border-gray-50"><i class="fa-solid fa-quote-left text-gray-300 mr-1.5 text-[11px]"></i>{{ day.description }}</div>
-                                        <div class="overflow-x-auto">
-                                            <table class="w-full text-left text-[12.5px] lined-table">
-                                                <thead>
-                                                    <tr class="bg-gray-50/60 text-gray-400 text-[11px] uppercase tracking-wide">
-                                                        <th class="py-2 px-3">Task</th><th class="py-2 px-3">Status</th><th class="py-2 px-3">Start date</th><th class="py-2 px-3">Time today</th><th class="py-2 px-3">Total</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody class="divide-y divide-gray-50">
-                                                    <tr v-for="t in day.tasks" :key="t.task_id">
-                                                        <td class="py-2 px-3"><div class="font-semibold text-gray-700">{{ t.client_name }}</div><div class="text-gray-400">{{ t.service_name }} · {{ t.period }}</div></td>
-                                                        <td class="py-2 px-3"><span class="pill text-[11px]" :class="{'pill-working':t.status==='Working','pill-pending':t.status==='Pending','pill-completed':t.status==='Completed'}">{{ t.status }}</span></td>
-                                                        <td class="py-2 px-3 font-mono text-gray-500">{{ t.start_date || '—' }}</td>
-                                                        <td class="py-2 px-3"><div class="font-semibold text-gray-800 font-mono">{{ fmtSecs(t.time_today_seconds) }}</div><div class="text-gray-400 font-mono text-[11px]">{{ tsTime(t.start_ts) }}–{{ t.running ? 'now' : tsTime(t.end_ts) }}</div></td>
-                                                        <td class="py-2 px-3 font-mono text-gray-500">{{ fmtSecs(t.total_seconds) }}</td>
-                                                    </tr>
-                                                    <tr v-if="!day.tasks.length"><td colspan="5" class="py-3 px-3 text-gray-400 italic">No task time tracked this day.</td></tr>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
+                                <template v-if="tsPeriod==='range'">
+                                    <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">From</label><input v-model="tsFrom" type="date" class="rounded-xl border border-gray-200 p-2 text-[13.5px]"></div>
+                                    <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">To</label><input v-model="tsTo" type="date" class="rounded-xl border border-gray-200 p-2 text-[13.5px]"></div>
+                                </template>
+                                <div v-if="tsPeriod==='weekly'"><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Week of</label><input v-model="tsWeekDate" type="date" class="rounded-xl border border-gray-200 p-2 text-[13.5px]"></div>
+                                <template v-if="tsPeriod==='monthly'">
+                                    <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Up to month</label><input v-model="tsMonth" type="month" class="rounded-xl border border-gray-200 p-2 text-[13.5px]"></div>
+                                    <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1"># months</label><input v-model.number="tsMonthCount" type="number" min="1" max="36" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-20"></div>
+                                </template>
+                                <template v-if="tsPeriod==='quarterly'">
+                                    <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Quarter</label><select v-model="tsQuarter" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white"><option value="Q1">Q1 (Jan–Mar)</option><option value="Q2">Q2 (Apr–Jun)</option><option value="Q3">Q3 (Jul–Sep)</option><option value="Q4">Q4 (Oct–Dec)</option></select></div>
+                                    <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Year</label><input v-model="tsYear" type="number" min="2000" max="2099" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-24"></div>
+                                </template>
+                                <template v-if="tsPeriod==='halfyearly'">
+                                    <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Half</label><select v-model="tsHalf" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white"><option value="H1">H1 (Jan–Jun)</option><option value="H2">H2 (Jul–Dec)</option></select></div>
+                                    <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Year</label><input v-model="tsYear" type="number" min="2000" max="2099" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-24"></div>
+                                </template>
+                                <template v-if="tsPeriod==='yearly'">
+                                    <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Up to year</label><input v-model="tsYear" type="number" min="2000" max="2099" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-24"></div>
+                                    <div><label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1"># years</label><input v-model.number="tsYearCount" type="number" min="1" max="10" class="rounded-xl border border-gray-200 p-2 text-[13.5px] w-20"></div>
+                                </template>
+                                <div v-if="canPickUser">
+                                    <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Staff</label>
+                                    <select v-model="tsReportUser" class="rounded-xl border border-gray-200 p-2 text-[13.5px] bg-white min-w-[140px]">
+                                        <option value="all">All users</option>
+                                        <option v-for="u in usersList" :key="u.id" :value="String(u.id)">{{ u.full_name }}</option>
+                                    </select>
                                 </div>
-                                <div v-else class="app-card p-10 text-center text-gray-400 italic text-[14px]">No timesheet activity in this period.</div>
+                                
+                                <button @click="openFileTimesheetModal" class="ml-auto px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold text-[13.5px] shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fa-solid fa-square-plus"></i> File Timesheet
+                                </button>
+                                <button @click="exportTsReport" class="px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[13.5px] shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fa-solid fa-file-export"></i> Export
+                                </button>
                             </div>
                         </div>
+
+                        <!-- Daily report -->
+                        <div v-if="tsReport.length" class="space-y-4 animate-fade-in">
+                            <div v-for="day in tsReport" :key="day.user_id + '|' + day.date" class="app-card overflow-hidden">
+                                <div class="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2" :class="{ 'bg-red-50/40': day.submission_flag==='late', 'bg-amber-50/40': day.submission_flag==='early' }">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="font-semibold text-gray-800 text-[14px]">{{ day.date }}</span>
+                                        <span v-if="canPickUser" class="text-[13px] text-gray-500">· {{ day.full_name }}</span>
+                                        <span class="text-[11px] px-2 py-0.5 rounded-full font-semibold" :class="flagInfo(day.submission_flag).cls">{{ flagInfo(day.submission_flag).label }}</span>
+                                    </div>
+                                    <div class="text-[12.5px] text-gray-500 flex items-center gap-2 flex-wrap">
+                                        <span><i class="fa-regular fa-clock mr-1"></i>Logged in {{ fmtHMS(day.logged_seconds) }}</span>
+                                        <span v-if="day.first_login" class="text-gray-400 font-mono">({{ tsTime(day.first_login) }} → {{ day.last_logout ? tsTime(day.last_logout) : '…' }})</span>
+                                    </div>
+                                </div>
+                                <div v-if="day.description" class="px-4 py-2 text-[13px] text-gray-600 border-b border-gray-50"><i class="fa-solid fa-quote-left text-gray-300 mr-1.5 text-[11px]"></i>{{ day.description }}</div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-[12.5px] lined-table">
+                                        <thead>
+                                            <tr class="bg-gray-50/60 text-gray-400 text-[11px] uppercase tracking-wide">
+                                                <th class="py-2 px-3">Task</th><th class="py-2 px-3">Status</th><th class="py-2 px-3">Start date</th><th class="py-2 px-3">Time today</th><th class="py-2 px-3">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-50">
+                                            <tr v-for="t in day.tasks" :key="t.task_id">
+                                                <td class="py-2 px-3"><div class="font-semibold text-gray-700">{{ t.client_name }}</div><div class="text-gray-400">{{ t.service_name }} · {{ t.period }}</div></td>
+                                                <td class="py-2 px-3"><span class="pill text-[11px]" :class="{'pill-working':t.status==='Working','pill-pending':t.status==='Pending','pill-completed':t.status==='Completed'}">{{ t.status }}</span></td>
+                                                <td class="py-2 px-3 font-mono text-gray-500">{{ t.start_date || '—' }}</td>
+                                                <td class="py-2 px-3"><div class="font-semibold text-gray-800 font-mono">{{ fmtHMS(t.time_today_seconds) }}</div><div class="text-gray-400 font-mono text-[11px]">{{ tsTime(t.start_ts) }}–{{ t.running ? 'now' : tsTime(t.end_ts) }}</div></td>
+                                                <td class="py-2 px-3 font-mono text-gray-500">{{ fmtHMS(t.total_seconds) }}</td>
+                                            </tr>
+                                            <tr v-if="!day.tasks.length"><td colspan="5" class="py-3 px-3 text-gray-400 italic">No task time tracked this day.</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="app-card p-10 text-center text-gray-400 italic text-[14px]">No timesheet activity in this period.</div>
                     </main>
 
                     <!-- 6. ACTIVITY LOG TAB -->
@@ -1309,13 +1360,26 @@
                     </main>
 
                     <!-- 8. BILLED SECTION -->
-                    <main v-if="currentTab === 'billed' && can('manage_billing')" class="p-7 space-y-6 max-w-7xl mx-auto">
-                        <div class="app-card px-5 py-3 inline-flex items-center gap-2.5">
-                            <i class="fa-solid fa-file-invoice-dollar text-accent"></i>
-                            <span class="text-[13px] text-gray-500 font-semibold uppercase tracking-wide">Total Billed</span>
-                            <span class="text-2xl font-semibold text-gray-800">{{ billedTasks.length }}</span>
+                    <main v-if="currentTab === 'billed' && can('manage_billing')" class="p-7 space-y-6 max-w-7xl mx-auto flex flex-col h-full">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
+                            <div class="flex items-center gap-3 flex-wrap">
+                                <div class="app-card px-5 py-3 inline-flex items-center gap-2.5 bg-white shadow-sm">
+                                    <i class="fa-solid fa-clock text-accent"></i>
+                                    <span class="text-[13px] text-gray-500 font-semibold uppercase tracking-wide">Unbilled Tasks</span>
+                                    <span class="text-2xl font-semibold text-blue-600">{{ unbilledTasks.length }}</span>
+                                </div>
+                                <div class="app-card px-5 py-3 inline-flex items-center gap-2.5 bg-white shadow-sm">
+                                    <i class="fa-solid fa-file-invoice-dollar text-accent"></i>
+                                    <span class="text-[13px] text-gray-500 font-semibold uppercase tracking-wide">Total Billed</span>
+                                    <span class="text-2xl font-semibold text-gray-800">{{ billedTasks.length }}</span>
+                                </div>
+                                <div class="relative w-full sm:w-64">
+                                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                    <input v-model="billedSearch" type="text" placeholder="Search by Client/Service..." class="pl-10 pr-4 py-2.5 w-full text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white shadow-sm">
+                                </div>
+                            </div>
                         </div>
-                        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
                             <div class="grid grid-cols-3 gap-3 w-full sm:w-auto">
                                 <div class="app-card px-5 py-3 rail-working"><p class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Billed</p><p class="text-xl font-semibold text-gray-800 mt-0.5">{{ fmtMoney(billedTotals.billed) }}</p></div>
                                 <div class="app-card px-5 py-3 rail-pending"><p class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">GST</p><p class="text-xl font-semibold text-gray-800 mt-0.5">{{ fmtMoney(billedTotals.gst) }}</p></div>
@@ -1330,7 +1394,7 @@
                                     <div class="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
                                         <button @click="billedSel.selectAll(billedTasks.map(t=>t.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ billedTasks.length }})</button>
                                         <button @click="billedSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
-                                        <div class="border-t border-gray-100 my-1"></div>
+                                        <div class="border-t border-gray-150 my-1"></div>
                                         <button @click="bulkDeleteBilled()" :disabled="!billedSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ billedSel.count }})</button>
                                     </div>
                                 </details>
@@ -1339,30 +1403,129 @@
                                 </button>
                             </div>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
-                            <div v-for="task in billedTasks" :key="task.id" class="app-card p-3.5 flex flex-col gap-2.5 rail-completed">
-                                <div class="flex items-start justify-between gap-2">
-                                    <div class="min-w-0 flex items-start gap-2">
-                                        <input v-if="can('delete_task')" type="checkbox" :checked="billedSel.has(task.id)" @change="billedSel.toggle(task.id)" class="mt-1 shrink-0">
-                                        <div class="min-w-0">
-                                            <div class="font-semibold text-[15px] text-gray-800 truncate">{{ task.client_name }}</div>
-                                            <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12.5px] font-medium">{{ task.service_name }}</div>
-                                        </div>
-                                    </div>
-                                    <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">{{ taskSerial(task) }} · {{ task.period }}</span>
-                                </div>
-                                <div class="grid grid-cols-3 gap-2 text-center border-y border-gray-100 py-2.5">
-                                    <div><p class="text-[10.5px] text-gray-400 uppercase tracking-wide">Billed</p><p class="text-[14px] font-semibold text-gray-800 mt-0.5">{{ fmtMoney(task.billed_amount) }}</p></div>
-                                    <div><p class="text-[10.5px] text-gray-400 uppercase tracking-wide">GST</p><p class="text-[14px] font-semibold text-gray-800 mt-0.5">{{ fmtMoney(task.gst_amount) }}</p></div>
-                                    <div><p class="text-[10.5px] text-gray-400 uppercase tracking-wide">Total</p><p class="text-[14px] font-semibold text-emerald-700 mt-0.5">{{ fmtMoney(task.total_amount) }}</p></div>
-                                </div>
-                                <div class="text-[12px] text-gray-400"><i class="fa-regular fa-calendar mr-1"></i>Billed on {{ task.billed_date || '—' }}</div>
-                                <div class="flex items-center gap-2 pt-1">
-                                    <button @click="markReceived(task)" class="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 transition"><i class="fa-solid fa-circle-check"></i> Fees Received</button>
-                                    <button @click="moveBackToCompleted(task)" class="px-3 py-2 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-lg text-[13px] font-semibold transition" title="Move back to Completed"><i class="fa-solid fa-rotate-left"></i></button>
-                                </div>
+
+                        <!-- Kanban Board for Billed Section -->
+                        <div class="flex gap-4 flex-1 min-h-[500px] overflow-x-auto pb-4">
+                            <!-- Column 1: Completed (Unbilled) -->
+                            <div class="kanban-col flex flex-col flex-1 min-w-[300px] bg-gray-50/50 rounded-2xl border border-gray-150 p-3"
+                                 :class="{ 'drag-over': dragOverBilledCol === 'Completed' }"
+                                 @dragover.prevent="dragOverBilledCol = 'Completed'"
+                                 @dragenter.prevent="dragOverBilledCol = 'Completed'"
+                                 @dragleave="dragOverBilledCol = null"
+                                 @drop.prevent="onBilledColumnDrop('Completed')">
+                                 <div class="flex items-center justify-between px-2 pb-3 border-b border-gray-100 shrink-0">
+                                     <div class="flex items-center gap-2">
+                                         <span class="w-2.5 h-2.5 rounded-full bg-gray-400"></span>
+                                         <h3 class="text-[14px] font-bold text-gray-600 uppercase tracking-wider">Completed (Unbilled)</h3>
+                                     </div>
+                                     <span class="text-[12px] font-bold text-gray-500 bg-gray-200/60 rounded-full px-2 py-0.5">{{ unbilledTasksFiltered.length }}</span>
+                                 </div>
+                                 <div class="flex-1 overflow-y-auto pt-3 space-y-3">
+                                     <div v-for="task in unbilledTasksFiltered" :key="task.id"
+                                          class="kanban-card p-3.5 app-card border-dashed border-gray-300"
+                                          draggable="true"
+                                          @dragstart="onTaskDragStart(task, $event)"
+                                          @dragend="onTaskDragEnd">
+                                          <div class="font-semibold text-[15px] text-gray-800 leading-snug">{{ task.client_name }}</div>
+                                          <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12px] font-medium">{{ task.service_name }}</div>
+                                          <div class="mt-2.5 flex items-center justify-between text-[12.5px] text-gray-500">
+                                              <span class="font-medium"><span class="text-gray-400">{{ taskSerial(task) }}</span> · {{ task.period }}</span>
+                                              <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
+                                          </div>
+                                          <div class="mt-3 pt-2.5 border-t border-gray-100 flex items-center gap-2">
+                                              <button @click="openBillingModal(task)" class="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[12.5px] font-semibold inline-flex items-center justify-center gap-1.5 transition"><i class="fa-solid fa-file-invoice-dollar"></i> Bill Task</button>
+                                          </div>
+                                     </div>
+                                     <div v-if="unbilledTasksFiltered.length === 0" class="text-center py-12 text-gray-400 italic text-[13px]">No unbilled completed tasks.</div>
+                                 </div>
                             </div>
-                            <div v-if="billedTasks.length === 0" class="col-span-full text-center py-14 text-gray-400 italic app-card">No billed tasks yet. Bill a completed task from the dashboard.</div>
+
+                            <!-- Column 2: Billed -->
+                            <div class="kanban-col flex flex-col flex-1 min-w-[300px] bg-gray-50/50 rounded-2xl border border-gray-150 p-3"
+                                 :class="{ 'drag-over': dragOverBilledCol === 'Billed' }"
+                                 @dragover.prevent="dragOverBilledCol = 'Billed'"
+                                 @dragenter.prevent="dragOverBilledCol = 'Billed'"
+                                 @dragleave="dragOverBilledCol = null"
+                                 @drop.prevent="onBilledColumnDrop('Billed')">
+                                 <div class="flex items-center justify-between px-2 pb-3 border-b border-gray-100 shrink-0">
+                                     <div class="flex items-center gap-2">
+                                         <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                                         <h3 class="text-[14px] font-bold text-blue-600 uppercase tracking-wider">Billed</h3>
+                                     </div>
+                                     <span class="text-[12px] font-bold text-blue-600 bg-blue-50 rounded-full px-2 py-0.5">{{ billedTasksFiltered.length }}</span>
+                                 </div>
+                                 <div class="flex-1 overflow-y-auto pt-3 space-y-3">
+                                     <div v-for="task in billedTasksFiltered" :key="task.id"
+                                          class="kanban-card p-3.5 app-card rail-billed"
+                                          draggable="true"
+                                          @dragstart="onTaskDragStart(task, $event)"
+                                          @dragend="onTaskDragEnd">
+                                          <div class="flex items-start justify-between gap-2">
+                                              <div class="min-w-0 flex items-start gap-2">
+                                                  <input v-if="can('delete_task')" type="checkbox" :checked="billedSel.has(task.id)" @change="billedSel.toggle(task.id)" class="mt-1 shrink-0">
+                                                  <div class="font-semibold text-[15px] text-gray-800 leading-snug">{{ task.client_name }}</div>
+                                              </div>
+                                          </div>
+                                          <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12px] font-medium">{{ task.service_name }}</div>
+                                          <div class="mt-2.5 flex items-center justify-between text-[12.5px] text-gray-500">
+                                              <span class="font-medium"><span class="text-gray-400">{{ taskSerial(task) }}</span> · {{ task.period }}</span>
+                                              <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
+                                          </div>
+                                          <div class="grid grid-cols-3 gap-1 text-center border-y border-gray-100 py-2 mt-2 bg-gray-50 rounded-lg">
+                                              <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">Billed</p><p class="text-[12px] font-bold text-gray-800 mt-0.5">{{ fmtMoney(task.billed_amount) }}</p></div>
+                                              <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">GST</p><p class="text-[12px] font-bold text-gray-800 mt-0.5">{{ fmtMoney(task.gst_amount) }}</p></div>
+                                              <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">Total</p><p class="text-[12px] font-bold text-emerald-700 mt-0.5">{{ fmtMoney(task.total_amount) }}</p></div>
+                                          </div>
+                                          <div class="text-[11.5px] text-gray-400 mt-2"><i class="fa-regular fa-calendar mr-1"></i>Billed on {{ task.billed_date || '—' }}</div>
+                                          <div class="mt-2 pt-2.5 border-t border-gray-100 flex items-center gap-2">
+                                              <button @click="markReceived(task)" class="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[12.5px] font-semibold inline-flex items-center justify-center gap-1.5 transition"><i class="fa-solid fa-circle-check"></i> Fees Received</button>
+                                              <button @click="moveBackToCompleted(task)" class="px-2.5 py-2 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl text-[12.5px] font-semibold transition" title="Move back to Completed"><i class="fa-solid fa-rotate-left"></i></button>
+                                          </div>
+                                     </div>
+                                     <div v-if="billedTasksFiltered.length === 0" class="text-center py-12 text-gray-400 italic text-[13px]">No billed tasks.</div>
+                                 </div>
+                            </div>
+
+                            <!-- Column 3: Received -->
+                            <div class="kanban-col flex flex-col flex-1 min-w-[300px] bg-gray-50/50 rounded-2xl border border-gray-150 p-3"
+                                 :class="{ 'drag-over': dragOverBilledCol === 'Received' }"
+                                 @dragover.prevent="dragOverBilledCol = 'Received'"
+                                 @dragenter.prevent="dragOverBilledCol = 'Received'"
+                                 @dragleave="dragOverBilledCol = null"
+                                 @drop.prevent="onBilledColumnDrop('Received')">
+                                 <div class="flex items-center justify-between px-2 pb-3 border-b border-gray-150 shrink-0">
+                                     <div class="flex items-center gap-2">
+                                         <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                                         <h3 class="text-[14px] font-bold text-emerald-600 uppercase tracking-wider">Received</h3>
+                                     </div>
+                                     <span class="text-[12px] font-bold text-emerald-600 bg-emerald-50 rounded-full px-2 py-0.5">{{ receivedTasksFiltered.length }}</span>
+                                 </div>
+                                 <div class="flex-1 overflow-y-auto pt-3 space-y-3">
+                                     <div v-for="task in receivedTasksFiltered" :key="task.id"
+                                          class="kanban-card p-3.5 app-card rail-received"
+                                          draggable="true"
+                                          @dragstart="onTaskDragStart(task, $event)"
+                                          @dragend="onTaskDragEnd">
+                                          <div class="font-semibold text-[15px] text-gray-800 leading-snug">{{ task.client_name }}</div>
+                                          <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12px] font-medium">{{ task.service_name }}</div>
+                                          <div class="mt-2.5 flex items-center justify-between text-[12.5px] text-gray-500">
+                                              <span class="font-medium"><span class="text-gray-400">{{ taskSerial(task) }}</span> · {{ task.period }}</span>
+                                              <span class="font-mono whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-accent"></i>{{ task.due_date || '—' }}</span>
+                                          </div>
+                                          <div class="grid grid-cols-3 gap-1 text-center border-y border-gray-100 py-2 mt-2 bg-gray-50 rounded-lg">
+                                              <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">Billed</p><p class="text-[12px] font-bold text-gray-800 mt-0.5">{{ fmtMoney(task.billed_amount) }}</p></div>
+                                              <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">GST</p><p class="text-[12px] font-bold text-gray-800 mt-0.5">{{ fmtMoney(task.gst_amount) }}</p></div>
+                                              <div><p class="text-[8.5px] text-gray-400 uppercase tracking-wide">Total</p><p class="text-[12px] font-bold text-emerald-700 mt-0.5">{{ fmtMoney(task.total_amount) }}</p></div>
+                                          </div>
+                                          <div class="text-[11.5px] text-gray-400 mt-2"><i class="fa-regular fa-calendar mr-1"></i>Billed on {{ task.billed_date || '—' }}</div>
+                                          <div class="text-[11.5px] text-emerald-600 font-semibold mt-1"><i class="fa-solid fa-circle-check mr-1"></i>Received on {{ task.received_date || '—' }}</div>
+                                          <div class="mt-2 pt-2.5 border-t border-gray-100 flex items-center gap-2">
+                                              <button @click="moveBackToBilled(task)" class="flex-1 px-3 py-2 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl text-[12.5px] font-semibold transition inline-flex items-center justify-center gap-1.5" title="Move back to Billed"><i class="fa-solid fa-rotate-left"></i> Move back to Billed</button>
+                                          </div>
+                                     </div>
+                                     <div v-if="receivedTasksFiltered.length === 0" class="text-center py-12 text-gray-400 italic text-[13px]">No received tasks.</div>
+                                 </div>
+                            </div>
                         </div>
                     </main>
 
@@ -1681,7 +1844,7 @@
                     <div class="text-white px-6 py-4 flex items-center justify-between shrink-0" :style="{ background: approveMode ? '#059669' : 'var(--color-primary)' }">
                         <h4 class="text-base font-bold flex items-center gap-1.5">
                             <i class="fa-solid" :class="approveMode ? 'fa-circle-check' : (editingTaskId ? 'fa-pen' : 'fa-plus')"></i>
-                            <span>{{ approveMode ? 'Review & approve task' : (editingTaskId ? 'Edit Client Task Details' : 'Create Client Task') }}</span>
+                            <span>{{ approveMode ? 'Review & approve task' : (editingTaskId ? 'Edit Task Details' : 'Create Task') }}</span>
                         </h4>
                         <button @click="closeTaskModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
                     </div>
@@ -2359,6 +2522,37 @@
                             {{ importBusy ? 'Uploading…' : 'Upload & Import' }}
                         </button>
                     </div>
+                </div>
+            </div>
+
+            <!-- MODAL: FILE TIMESHEET -->
+            <div v-if="showFileTimesheetModal" @click.self="closeFileTimesheetModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-md border border-gray-100 overflow-hidden">
+                    <div class="bg-primary text-white px-6 py-4 flex items-center justify-between">
+                        <h4 class="text-base font-bold flex items-center gap-2"><i class="fa-solid fa-square-plus"></i> File Timesheet</h4>
+                        <button @click="closeFileTimesheetModal" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <form @submit.prevent="fileTimesheet2" class="space-y-0">
+                        <div class="p-6 space-y-5">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Date</label>
+                                <input v-model="tsFileDate" type="date" required class="w-full rounded-xl border border-gray-200 p-2.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Details / Work Description <span class="font-medium normal-case text-gray-400">(optional)</span></label>
+                                <textarea v-model="tsFileDesc" rows="4" placeholder="Summary of the day's work…" class="w-full rounded-xl border border-gray-200 p-2.5 text-sm resize-none"></textarea>
+                            </div>
+                            <p class="text-[12px] text-gray-400 leading-normal">Time spent on each task is recorded automatically from your timers — no need to enter it.</p>
+                            <p v-if="tsFileMsg" class="text-[13px] font-semibold text-emerald-600 flex items-center gap-1.5"><i class="fa-solid fa-circle-check"></i>{{ tsFileMsg }}</p>
+                        </div>
+                        <div class="flex justify-end gap-2 px-6 py-4 border-t bg-gray-50/50">
+                            <button type="button" @click="closeFileTimesheetModal" class="px-4 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Cancel</button>
+                            <button type="submit" :disabled="tsFiling" class="px-5 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-semibold transition shadow disabled:opacity-50 flex items-center gap-2">
+                                <i class="fa-solid" :class="tsFiling ? 'fa-spinner fa-spin' : 'fa-circle-check'"></i>
+                                {{ tsFiling ? 'Filing…' : 'File Timesheet' }}
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
 

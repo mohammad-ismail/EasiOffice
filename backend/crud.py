@@ -997,7 +997,8 @@ def get_presence(db, window_seconds=150):
             except ValueError:
                 online = False
         out.append({"user_id": r['id'], "full_name": r['full_name'], "role": r['role'],
-                    "online": online, "working": bool(r['running']), "last_seen": r['last_seen']})
+                    "online": online, "working": bool(r['running']), "last_seen": r['last_seen'],
+                    "logged_seconds_today": daily_logged_in_seconds(db, r['id'], now.strftime("%Y-%m-%d"))["seconds"]})
     return out
 
 def daily_logged_in_seconds(db, user_id, date_str):

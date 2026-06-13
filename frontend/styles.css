@@ -171,6 +171,8 @@ table.lined-table td:last-child {
 .rail-pending { box-shadow: inset 4px 0 0 var(--color-stuck); }
 .rail-completed { box-shadow: inset 4px 0 0 var(--color-completed); }
 .rail-unassigned { box-shadow: inset 4px 0 0 #C7C7C7; }
+.rail-billed { box-shadow: inset 4px 0 0 #3b82f6; }
+.rail-received { box-shadow: inset 4px 0 0 #10b981; }
 
 /* Status pills — greyscale (work on both white & cream) */
 .pill { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.18rem 0.6rem; border-radius: 999px; font-size: 12.5px; font-weight: 600; }

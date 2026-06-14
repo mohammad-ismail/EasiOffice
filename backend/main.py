@@ -468,13 +468,27 @@ def update_status(task_id):
 
     cursor = db.cursor()
     cursor.execute('''
-        SELECT t.period, c.name as client_name, s.name as service_name
+        SELECT t.period, c.name as client_name, s.name as service_name, t.status
         FROM task_board t
         LEFT JOIN client_master c ON t.client_id = c.id
         LEFT JOIN service_master s ON t.service_id = s.id
         WHERE t.id = ?
     ''', (task_id,))
     task = cursor.fetchone()
+    if not task:
+        db.close()
+        abort(404, description="Task not found")
+
+    role, _perms = current_role_and_perms()
+    if role == 'Employee' and task['status'] == 'Completed':
+        db.close()
+        abort(403, description="Completed tasks cannot be moved or modified by Employees.")
+
+    if status == 'Completed':
+        cursor.execute("SELECT COUNT(*) as cnt FROM task_timers WHERE task_id = ? AND running_since IS NOT NULL", (task_id,))
+        if cursor.fetchone()['cnt'] > 0:
+            db.close()
+            abort(400, description="The timer is ticking on this task. Please stop the timer first before moving it to completed.")
 
     updated = crud.update_task_status(db, task_id, status)
     if updated and task:
@@ -574,7 +588,7 @@ def delete_single_task(task_id):
     db = get_db()
     cursor = db.cursor()
     cursor.execute('''
-        SELECT c.name as client_name, s.name as service_name, t.period
+        SELECT c.name as client_name, s.name as service_name, t.period, t.status
         FROM task_board t
         LEFT JOIN client_master c ON t.client_id = c.id
         LEFT JOIN service_master s ON t.service_id = s.id
@@ -584,6 +598,12 @@ def delete_single_task(task_id):
     if not task:
         db.close()
         abort(404, description="Task not found")
+    
+    role, _perms = current_role_and_perms()
+    if role == 'Employee' and task['status'] == 'Completed':
+        db.close()
+        abort(403, description="Completed tasks cannot be deleted by Employees.")
+        
     crud.delete_task(db, task_id)
     crud.log_user_action(db, current_username(), "Task Deleted",
                          f"Deleted task '{task['client_name']} - {task['service_name']}' ({task['period']})")
@@ -1666,6 +1686,11 @@ def update_task_details(task_id):
     # Enforce the lock: once Admin/Partner/Manager has approved (locked) the
     # task, only they can keep editing it.
     cur = db.cursor()
+    if data.get('status') == 'Completed':
+        cur.execute("SELECT COUNT(*) as cnt FROM task_timers WHERE task_id = ? AND running_since IS NOT NULL", (task_id,))
+        if cur.fetchone()['cnt'] > 0:
+            db.close()
+            abort(400, description="The timer is ticking on this task. Please stop the timer first before moving it to completed.")
     cur.execute('''SELECT client_id, service_id, financial_year, period, status,
                           due_date, estimated_minutes, assigned_to, locked, created_by
                    FROM task_board WHERE id = ?''', (task_id,))

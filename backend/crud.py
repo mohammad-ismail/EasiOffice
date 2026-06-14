@@ -92,7 +92,34 @@ def get_tasks_with_details(db):
         LEFT JOIN users u ON t.assigned_to = u.id
         LEFT JOIN users d ON t.delegated_to = d.id
     ''')
-    return [dict(row) for row in cursor.fetchall()]
+    tasks = [dict(row) for row in cursor.fetchall()]
+
+    # Fetch all timesheets to get logged seconds per task_id
+    cursor.execute("SELECT task_id, hours, minutes FROM timesheets")
+    ts_rows = cursor.fetchall()
+    ts_seconds = {}
+    for r in ts_rows:
+        tid = r['task_id']
+        secs = (r['hours'] or 0) * 3600 + (r['minutes'] or 0) * 60
+        ts_seconds[tid] = ts_seconds.get(tid, 0) + secs
+
+    # Fetch all active/paused user timers to get timer seconds per task_id
+    now = time.time()
+    cursor.execute("SELECT task_id, accumulated_seconds, running_since FROM task_timers")
+    timer_rows = cursor.fetchall()
+    timer_seconds = {}
+    for r in timer_rows:
+        tid = r['task_id']
+        running = r['running_since'] is not None
+        secs = (r['accumulated_seconds'] or 0) + (int(now - r['running_since']) if running else 0)
+        timer_seconds[tid] = timer_seconds.get(tid, 0) + max(0, secs)
+
+    # Attach computed total_time_seconds to task dicts
+    for task in tasks:
+        tid = task['id']
+        task['total_time_seconds'] = ts_seconds.get(tid, 0) + timer_seconds.get(tid, 0)
+
+    return tasks
 
 
 # --- Task lock ----------------------------------------------------------------

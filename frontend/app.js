@@ -25,25 +25,36 @@ createApp({
         };
         const dismissToast = (id) => { toasts.value = toasts.value.filter(t => t.id !== id); };
 
+        const confirmState = ref({ show: false, message: '', resolve: null });
+        const customConfirm = (message) => {
+            return new Promise((resolve) => {
+                confirmState.value = { show: true, message, resolve };
+            });
+        };
+        const isConfirmDestructive = computed(() => {
+            const msg = (confirmState.value.message || '').toLowerCase();
+            return msg.includes('delete') || msg.includes('remove') || msg.includes('clear') || msg.includes('reset');
+        });
+
         // True while any modal/drawer/form overlay is open — used to pause the
-        // 5-second auto-refresh so it doesn't disrupt something being edited.
         const anyModalOpen = () => (
             showTaskModal.value || showClientModal.value || showUserModal.value ||
             showServiceModal.value || showProfileModal.value || showCalendarDayModal.value ||
             showBillingModal.value || showAssignModal.value || showImportModal.value ||
             showExportModal.value || showClearLogModal.value || showDeleteUserModal.value ||
             showRecurringModal.value || showCompletionModal.value || showFileTimesheetModal.value ||
-            !!vaultClientObj.value || !!contactClientObj.value
+            showNotificationsModal.value || confirmState.value.show || !!vaultClientObj.value || !!contactClientObj.value
         );
 
         // Close every modal / drawer (used by the Escape key handler).
         const closeTopMostModal = () => {
+            if (confirmState.value.show) { confirmState.value.resolve(false); confirmState.value.show = false; return; }
             showTaskModal.value = false; showClientModal.value = false; showUserModal.value = false;
             showServiceModal.value = false; showProfileModal.value = false; showCalendarDayModal.value = false;
             showBillingModal.value = false; showAssignModal.value = false; showImportModal.value = false;
             showExportModal.value = false; showClearLogModal.value = false; showDeleteUserModal.value = false;
             showRecurringModal.value = false; showCompletionModal.value = false;
-            showFileTimesheetModal.value = false;
+            showFileTimesheetModal.value = false; showNotificationsModal.value = false;
             vaultClientObj.value = null; contactClientObj.value = null;
             approveMode.value = false; editingTaskId.value = null;
         };
@@ -217,6 +228,7 @@ createApp({
         const taskSearch = ref('');
         const taskStatusFilter = ref('All');
         const billedSearch = ref('');
+        const billedView = ref('kanban');
 
         const unbilledTasksFiltered = computed(() => {
             const q = billedSearch.value.trim().toLowerCase();
@@ -236,6 +248,15 @@ createApp({
             if (q) list = list.filter(t => (t.client_name || '').toLowerCase().includes(q) || (t.service_name || '').toLowerCase().includes(q));
             return list;
         });
+
+        const allBilledTasksCombined = computed(() => {
+            return [
+                ...unbilledTasksFiltered.value,
+                ...billedTasksFiltered.value,
+                ...receivedTasksFiltered.value
+            ];
+        });
+
         const clientSearch = ref('');
         const serviceSearch = ref('');
         const servicePage = ref(1);
@@ -484,6 +505,9 @@ createApp({
             const showUnassigned = canSeeAll.value || can('assign_task');
             const q = taskSearch.value.trim().toLowerCase();
             let list = visibleTasks.value;
+            if (currentUser.value.role === 'Employee') {
+                list = list.filter(t => !isBilling(t));
+            }
             if (q) list = list.filter(t => (t.client_name || '').toLowerCase().includes(q) || (t.service_name || '').toLowerCase().includes(q));
 
             const cols = [];
@@ -491,8 +515,10 @@ createApp({
             cols.push({ key: 'Pending', label: 'Pending', icon: 'fa-clock', accent: 'var(--color-stuck)' });
             cols.push({ key: 'Working', label: 'Working', icon: 'fa-bolt', accent: 'var(--color-goingon)' });
             cols.push({ key: 'Completed', label: 'Completed', icon: 'fa-circle-check', accent: 'var(--color-completed)' });
-            cols.push({ key: 'Billed', label: 'Billed', icon: 'fa-file-invoice-dollar', accent: '#3b82f6' });
-            cols.push({ key: 'Received', label: 'Received', icon: 'fa-circle-check', accent: '#10b981' });
+            if (currentUser.value.role !== 'Employee') {
+                cols.push({ key: 'Billed', label: 'Billed', icon: 'fa-file-invoice-dollar', accent: '#3b82f6' });
+                cols.push({ key: 'Received', label: 'Received', icon: 'fa-circle-check', accent: '#10b981' });
+            }
             cols.forEach(c => c.tasks = []);
 
             const byKey = Object.fromEntries(cols.map(c => [c.key, c]));
@@ -526,16 +552,20 @@ createApp({
             if (id == null) return;
             const task = tasks.value.find(t => t.id === id);
             if (!task) return;
+            if (currentUser.value.role === 'Employee' && task.status === 'Completed') {
+                notify("Completed tasks cannot be moved by Employees.", 'error');
+                return;
+            }
             if (columnKeyOf(task) === colKey) return;
 
             // Dropping into Billed or Received columns on Dashboard
             if (colKey === 'Billed') {
-                if (!can('manage_billing')) { alert("You don't have permission to manage billing."); return; }
+                if (!can('manage_billing')) { notify("You don't have permission to manage billing.", 'error'); return; }
                 if (task.billing_stage === 'Received') {
                     await moveBackToBilled(task);
                 } else {
                     if (task.status !== 'Completed') {
-                        if (confirm("Task must be marked as Completed before billing. Mark as Completed and open billing modal?")) {
+                        if (await customConfirm("Task must be marked as Completed before billing. Mark as Completed and open billing modal?")) {
                             await updateTaskStatus(task.id, 'Completed');
                             openBillingModal(task);
                         }
@@ -547,9 +577,9 @@ createApp({
             }
 
             if (colKey === 'Received') {
-                if (!can('manage_billing')) { alert("You don't have permission to manage billing."); return; }
+                if (!can('manage_billing')) { notify("You don't have permission to manage billing.", 'error'); return; }
                 if (task.billing_stage !== 'Billed') {
-                    alert("Only already Billed tasks can be directly marked as Fees Received. Please drag to Billed first.");
+                    notify("Only already Billed tasks can be directly marked as Fees Received. Please drag to Billed first.", 'error');
                 } else {
                     await markReceived(task);
                 }
@@ -558,8 +588,8 @@ createApp({
 
             // Dropping from Billed/Received back to Unassigned/Pending/Working/Completed
             if (task.billing_stage === 'Received') {
-                if (!can('manage_billing')) { alert("You don't have permission to manage billing."); return; }
-                if (confirm(`Move this task back to ${colKey}? This will reset received fees and billing status.`)) {
+                if (!can('manage_billing')) { notify("You don't have permission to manage billing.", 'error'); return; }
+                if (await customConfirm(`Move this task back to ${colKey}? This will reset received fees and billing status.`)) {
                     await billingAction(task, 'unreceive');
                     await billingAction(task, 'unbill');
                     if (colKey === 'Unassigned') {
@@ -572,8 +602,8 @@ createApp({
             }
 
             if (task.billing_stage === 'Billed') {
-                if (!can('manage_billing')) { alert("You don't have permission to manage billing."); return; }
-                if (confirm(`Move this task back to ${colKey}? This will reset billing status.`)) {
+                if (!can('manage_billing')) { notify("You don't have permission to manage billing.", 'error'); return; }
+                if (await customConfirm(`Move this task back to ${colKey}? This will reset billing status.`)) {
                     await billingAction(task, 'unbill');
                     if (colKey === 'Unassigned') {
                         await assignTask(task, null);
@@ -611,7 +641,7 @@ createApp({
                 if (currentStage === 'Billed') {
                     await moveBackToCompleted(task);
                 } else if (currentStage === 'Received') {
-                    if (confirm('Move this task back to Completed? This will reset received fees and billing status.')) {
+                    if (await customConfirm('Move this task back to Completed? This will reset received fees and billing status.')) {
                         await billingAction(task, 'unreceive');
                         await billingAction(task, 'unbill');
                     }
@@ -626,7 +656,7 @@ createApp({
                 if (currentStage === 'Billed') {
                     await markReceived(task);
                 } else {
-                    alert('Task must be billed before marking fees as received. Drag to Billed first.');
+                    notify('Task must be billed before marking fees as received. Drag to Billed first.', 'error');
                 }
             }
         };
@@ -921,7 +951,7 @@ createApp({
             const f = calEventForm.value;
             // Need at least a title OR a linked task.
             if ((!f.title || !f.title.trim()) && !f.task_id) {
-                alert('Enter a title or pick a task for the event.'); return;
+                notify('Enter a title or pick a task for the event.', 'error'); return;
             }
             try {
                 const method = f.id ? 'PUT' : 'POST';
@@ -939,13 +969,13 @@ createApp({
                     await fetchCalendar();
                 } else {
                     const e = await res.json().catch(() => ({}));
-                    alert(e.message || 'Could not save event.');
+                    notify(e.message || 'Could not save event.', 'error');
                 }
             } catch (e) { console.error('save event', e); }
         };
 
         const deleteCalEvent = async (ev) => {
-            if (!confirm(`Delete event "${calEventLabel(ev)}"?`)) return;
+            if (!await customConfirm(`Delete event "${calEventLabel(ev)}"?`)) return;
             try {
                 const res = await apiFetch(`/api/calendar/${ev.id}`, { method: 'DELETE' });
                 if (res.ok) {
@@ -1039,7 +1069,7 @@ createApp({
                 });
                 const data = await res.json().catch(() => ({}));
                 if (res.ok) { task.locked = newLocked ? 1 : 0; }
-                else { alert(data.message || 'Could not change lock state.'); }
+                else { notify(data.message || 'Could not change lock state.', 'error'); }
             } catch (e) { console.error('lock toggle', e); }
         };
 
@@ -1057,7 +1087,7 @@ createApp({
             // overlay that opens over whatever section the user is on.
             let t = tasks.value.find(x => x.id === n.task_id);
             if (!t) { await fetchData(); t = tasks.value.find(x => x.id === n.task_id); }
-            if (!t) { alert('This task is no longer available.'); return; }
+            if (!t) { notify('This task is no longer available.', 'error'); return; }
             approveMode.value = true;
             startEditTask(t);
         };
@@ -1113,6 +1143,11 @@ createApp({
         const onlineUsers = computed(() => presence.value.filter(p => p.online));
 
         // ===================== File Timesheet Modal =====================
+        const tsFileDate = ref(today);
+        const tsFileDesc = ref('');
+        const tsFileMsg = ref('');
+        const tsFiling = ref(false);
+
         const showFileTimesheetModal = ref(false);
         const openFileTimesheetModal = () => {
             tsFileDate.value = today;
@@ -1127,6 +1162,7 @@ createApp({
 
         // ===================== Profile / Change Password =====================
         const showProfileModal = ref(false);
+        const showNotificationsModal = ref(false);
         const profilePwd = ref({ current: '', next: '', confirm: '' });
         const profileBusy = ref(false);
         const profileError = ref('');
@@ -1214,6 +1250,12 @@ createApp({
 
         // Tasks API Actions (Working & Pending Status updates)
         const updateTaskStatus = async (taskId, newStatus) => {
+            if (newStatus === 'Completed') {
+                if (isTaskRunning(taskId)) {
+                    notify("The timer is ticking on this task. Please stop the timer first before moving it to completed.", 'error');
+                    return;
+                }
+            }
             try {
                 await apiFetch(`/api/tasks/${taskId}/status?status=${encodeURIComponent(newStatus)}`, {
                     method: 'PUT'
@@ -1223,7 +1265,6 @@ createApp({
                 // On completion: bank the timer, then auto-fill time + date from it.
                 // The user only adds an optional description before logging.
                 if (newStatus === 'Completed' && t) {
-                    if (isTaskRunning(t.id)) { await pauseTaskTimer(t); }
                     launchConfetti();
                     prefillCompletionLog(t);
                     showCompletionModal.value = true;
@@ -1263,6 +1304,12 @@ createApp({
             try {
                 const wasEditing = !!editingTaskId.value;
                 const wasApproval = approveMode.value && wasEditing;
+                if (wasEditing && taskForm.value.status === 'Completed') {
+                    if (isTaskRunning(editingTaskId.value)) {
+                        notify("The timer is ticking on this task. Please stop the timer first before moving it to completed.", 'error');
+                        return;
+                    }
+                }
                 const method = editingTaskId.value ? 'PUT' : 'POST';
                 const url = editingTaskId.value ? `/api/tasks/${editingTaskId.value}` : '/api/tasks';
                 const estimated_minutes = (Number(taskForm.value.est_hours) || 0) * 60 + (Number(taskForm.value.est_minutes) || 0);
@@ -1330,7 +1377,7 @@ createApp({
                     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields)
                 });
                 if (res.ok) { await fetchRecurringTemplates(); await fetchData(); }
-                else { const e = await res.json().catch(() => ({})); alert(e.message || 'Could not update template.'); }
+                else { const e = await res.json().catch(() => ({})); notify(e.message || 'Could not update template.', 'error'); }
             } catch (e) { console.error('update recurring', e); }
         };
         const freqLabel = (f) => ({ monthly: 'Monthly', quarterly: 'Quarterly', six_monthly: 'Six-monthly', annual: 'Annual' }[f] || f);
@@ -1347,13 +1394,17 @@ createApp({
                     await fetchData();
                 } else {
                     const err = await res.json().catch(() => ({}));
-                    alert(err.message || 'Could not delegate task.');
+                    notify(err.message || 'Could not delegate task.', 'error');
                 }
             } catch (e) { console.error('Delegate error', e); }
         };
 
         // Delete a task (admin/partner / delete_task permission).
         const deleteTask = async (task) => {
+            if (currentUser.value && currentUser.value.role === 'Employee' && task.status === 'Completed') {
+                notify('Completed tasks cannot be deleted by Employees.', 'error');
+                return;
+            }
             const label = `"${task.client_name} · ${task.service_name}" (${task.period})`;
             // Warn specifically when the task hasn't reached the billing pipeline yet.
             let msg;
@@ -1364,7 +1415,7 @@ createApp({
             } else {
                 msg = `Delete the task ${label}? This cannot be undone.`;
             }
-            if (!confirm(msg)) return;
+            if (!await customConfirm(msg)) return;
             try {
                 const res = await apiFetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
                 if (res.ok) {
@@ -1380,7 +1431,7 @@ createApp({
         // Delete a service (delete_service permission). Backend enforces that no
         // tasks reference the service.
         const deleteService = async (service) => {
-            if (!confirm(`Delete the service "${service.name}"? This cannot be undone.`)) return;
+            if (!await customConfirm(`Delete the service "${service.name}"? This cannot be undone.`)) return;
             try {
                 const res = await apiFetch(`/api/services/${service.id}`, { method: 'DELETE' });
                 const data = await res.json().catch(() => ({}));
@@ -1423,7 +1474,7 @@ createApp({
         const bulkDeleteSelectedClients = async () => {
             const ids = Array.from(selectedClientIds.value);
             if (!ids.length) return;
-            if (!confirm(`Delete ${ids.length} selected client(s)? This cannot be undone.`)) return;
+            if (!await customConfirm(`Delete ${ids.length} selected client(s)? This cannot be undone.`)) return;
             let ok = 0; const failures = [];
             for (const id of ids) {
                 try {
@@ -1436,13 +1487,13 @@ createApp({
             await fetchData();
             if (failures.length) {
                 const lines = failures.slice(0, 8).map(f => `• ID ${f.id}: ${f.msg}`).join('\n');
-                alert(`Deleted ${ok} client(s); ${failures.length} could not be deleted:\n${lines}`);
+                notify(`Deleted ${ok} client(s); ${failures.length} could not be deleted:\n${lines}`, 'info', 6000);
             }
         };
         const bulkDeleteSelectedServices = async () => {
             const ids = Array.from(selectedServiceIds.value);
             if (!ids.length) return;
-            if (!confirm(`Delete ${ids.length} selected service(s)? This cannot be undone.`)) return;
+            if (!await customConfirm(`Delete ${ids.length} selected service(s)? This cannot be undone.`)) return;
             let ok = 0; const failures = [];
             for (const id of ids) {
                 try {
@@ -1455,7 +1506,7 @@ createApp({
             await fetchData();
             if (failures.length) {
                 const lines = failures.slice(0, 8).map(f => `• ID ${f.id}: ${f.msg}`).join('\n');
-                alert(`Deleted ${ok} service(s); ${failures.length} could not be deleted:\n${lines}`);
+                notify(`Deleted ${ok} service(s); ${failures.length} could not be deleted:\n${lines}`, 'info', 6000);
             }
         };
 
@@ -1486,7 +1537,7 @@ createApp({
         const _bulkDelete = async (sel, urlFor, label, refresh) => {
             const ids = sel.values();
             if (!ids.length) return;
-            if (!confirm(`Delete ${ids.length} selected ${label}? This cannot be undone.`)) return;
+            if (!await customConfirm(`Delete ${ids.length} selected ${label}? This cannot be undone.`)) return;
             let ok = 0; const failures = [];
             for (const id of ids) {
                 try {
@@ -1497,7 +1548,7 @@ createApp({
             }
             sel.clear();
             if (refresh) await refresh();
-            if (failures.length) alert(`Deleted ${ok} ${label}; ${failures.length} could not be deleted:\n• ` + failures.slice(0, 8).join('\n• '));
+            if (failures.length) notify(`Deleted ${ok} ${label}; ${failures.length} could not be deleted:\n• ` + failures.slice(0, 8).join('\n• '), 'info', 6000);
         };
 
         const bulkDeleteTasks    = () => _bulkDelete(taskSel,     id => `/api/tasks/${id}`,        'task(s)',         fetchData);
@@ -1508,23 +1559,23 @@ createApp({
 
         // Single-item deletes used by the per-row trash buttons.
         const deleteNotification = async (n) => {
-            if (!confirm('Delete this notification?')) return;
+            if (!await customConfirm('Delete this notification?')) return;
             try { const res = await apiFetch(`/api/notifications/${n.id}`, { method: 'DELETE' }); if (res.ok) await fetchNotifications(); }
             catch (e) { console.error('delete notif', e); }
         };
         const deleteTimesheetLog = async (log) => {
-            if (!confirm('Delete this time log entry? This cannot be undone.')) return;
+            if (!await customConfirm('Delete this time log entry? This cannot be undone.')) return;
             try {
                 const res = await apiFetch(`/api/timesheets/${log.id}`, { method: 'DELETE' });
                 const d = await res.json().catch(() => ({}));
-                if (res.ok) await fetchData(); else alert(d.message || 'Could not delete entry.');
+                if (res.ok) await fetchData(); else notify(d.message || 'Could not delete entry.', 'error');
             } catch (e) { console.error('delete timesheet', e); }
         };
 
         // Delete a client (admin/partner / delete_client permission). Backend enforces
         // the "no open tasks" rule and returns a clear message if not allowed.
         const deleteClient = async (client) => {
-            if (!confirm(`Delete client "${client.name}"? This also removes its contacts and stored credentials. This cannot be undone.`)) return;
+            if (!await customConfirm(`Delete client "${client.name}"? This also removes its contacts and stored credentials. This cannot be undone.`)) return;
             try {
                 const res = await apiFetch(`/api/clients/${client.id}`, { method: 'DELETE' });
                 const data = await res.json().catch(() => ({}));
@@ -1584,12 +1635,12 @@ createApp({
                     body: JSON.stringify({ action })
                 });
                 if (res.ok) { await fetchData(); }
-                else { const err = await res.json().catch(() => ({})); alert(err.message || 'Action failed.'); }
+                else { const err = await res.json().catch(() => ({})); notify(err.message || 'Action failed.', 'error'); }
             } catch (e) { console.error('Billing action error', e); }
         };
         const markReceived = (task) => billingAction(task, 'receive');
         const moveBackToBilled = (task) => billingAction(task, 'unreceive');
-        const moveBackToCompleted = (task) => { if (confirm('Move this task back to Completed (remove it from Billed)?')) billingAction(task, 'unbill'); };
+        const moveBackToCompleted = async (task) => { if (await customConfirm('Move this task back to Completed (remove it from Billed)?')) billingAction(task, 'unbill'); };
 
         const sumBilling = (list) => {
             let billed = 0, gst = 0, total = 0;
@@ -1747,8 +1798,8 @@ createApp({
         });
 
         const openDeleteUser = (userObj) => {
-            if (userObj.username === 'admin') { alert('The primary administrator cannot be deleted.'); return; }
-            if (userObj.id === currentUser.value.id) { alert('You cannot delete your own account.'); return; }
+            if (userObj.username === 'admin') { notify('The primary administrator cannot be deleted.', 'error'); return; }
+            if (userObj.id === currentUser.value.id) { notify('You cannot delete your own account.', 'error'); return; }
             deleteUserTarget.value = userObj;
             deleteReassignTo.value = '';
             deleteUserError.value = '';
@@ -1843,10 +1894,6 @@ createApp({
         };
 
         // ===================== Timesheet: file + daily report =====================
-        const tsFileDate = ref(today);
-        const tsFileDesc = ref('');
-        const tsFiling = ref(false);
-        const tsFileMsg = ref('');
         const fileTimesheet2 = async () => {
             if (!tsFileDate.value) return;
             tsFiling.value = true; tsFileMsg.value = '';
@@ -2084,7 +2131,7 @@ createApp({
 
         const savePasswordEdit = async (credId) => {
             if (!editingPassword.value) {
-                alert("Password cannot be blank.");
+                notify("Password cannot be blank.", 'error');
                 return;
             }
             try {
@@ -2105,7 +2152,7 @@ createApp({
         };
 
         const deleteCredential = async (credId) => {
-            if (!confirm("Are you sure you want to permanently delete this portal credential?")) {
+            if (!await customConfirm("Are you sure you want to permanently delete this portal credential?")) {
                 return;
             }
             try {
@@ -2439,6 +2486,40 @@ createApp({
                 : `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
         };
         const taskTimerDisplay = (taskId) => fmtHMS(taskElapsedSeconds(taskId));
+        const taskTotalTime = (task) => {
+            if (!task) return '';
+            let seconds = task.total_time_seconds;
+            if (seconds === undefined) {
+                let totalMins = 0;
+                if (timesheets && timesheets.value) {
+                    timesheets.value.forEach(ts => {
+                        if (ts.task_id === task.id) {
+                            totalMins += (ts.hours || 0) * 60 + (ts.minutes || 0);
+                        }
+                    });
+                }
+                seconds = totalMins * 60;
+                const activeSecs = taskElapsedSeconds(task.id);
+                if (activeSecs > 0) {
+                    seconds += activeSecs;
+                }
+            } else {
+                const t = timers.value[task.id];
+                if (t && t.running) {
+                    void tick.value;
+                    const liveAdded = Math.max(0, Math.floor((Date.now() - timersFetchedAt.value) / 1000));
+                    seconds += liveAdded;
+                }
+            }
+            if (seconds <= 0) return '';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            if (h === 0 && m === 0) {
+                return s > 0 ? `${s}s` : '';
+            }
+            return h > 0 ? `${h}h ${m}m` : `${m}m`;
+        };
         const isTaskRunning = (taskId) => !!(timers.value[taskId] && timers.value[taskId].running);
         const taskHasTime = (taskId) => !!(timers.value[taskId] && (timers.value[taskId].seconds > 0 || timers.value[taskId].running));
 
@@ -2464,10 +2545,10 @@ createApp({
             catch (e) { console.error('pause timer', e); }
         };
         const resetTaskTimer = async (task) => {
-            if (!confirm(`Reset the timer for "${task.client_name} · ${task.service_name}"? The tracked time will be cleared.`)) return;
+            if (!await customConfirm(`Reset the timer for "${task.client_name} · ${task.service_name}"? The tracked time will be cleared.`)) return;
             try {
                 const res = await apiFetch(`/api/tasks/${task.id}/timer/reset`, { method: 'POST' });
-                if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.message || 'Could not reset timer.'); return; }
+                if (!res.ok) { const e = await res.json().catch(() => ({})); notify(e.message || 'Could not reset timer.', 'error'); return; }
                 await fetchTimers();
             } catch (e) { console.error('reset timer', e); }
         };
@@ -2627,7 +2708,7 @@ createApp({
                 });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
-                    alert(err.message || 'Export failed.');
+                    notify(err.message || 'Export failed.', 'error');
                     return false;
                 }
                 const blob = await res.blob();
@@ -2635,7 +2716,7 @@ createApp({
                 return true;
             } catch (e) {
                 console.error('Export error', e);
-                alert('Export failed. Please try again.');
+                notify('Export failed. Please try again.', 'error');
                 return false;
             } finally {
                 exportBusy.value = false;
@@ -2861,11 +2942,11 @@ createApp({
             if (exportMode.value === 'report') {
                 const sheets = exportSheets.value.filter(s => s.selected)
                     .map(s => ({ name: s.name, columns: s.columns, rows: s.rowsFn() }));
-                if (!sheets.length) { alert('Select at least one section to export.'); return; }
+                if (!sheets.length) { notify('Select at least one section to export.', 'error'); return; }
                 spec = { title: exportTitle.value, sheets };
             } else {
                 const cols = exportColumns.value.filter(c => exportFieldSel.value[c.key]);
-                if (!cols.length) { alert('Select at least one field to export.'); return; }
+                if (!cols.length) { notify('Select at least one field to export.', 'error'); return; }
                 let rows = exportRowsFn ? exportRowsFn() : [];
                 exportFilters.value.forEach(f => {
                     if (f.value !== ALL) rows = rows.filter(r => f.match(r, f.value));
@@ -2934,10 +3015,10 @@ createApp({
         const downloadImportTemplate = async (format) => {
             try {
                 const res = await apiFetch(`/api/import/${importEntity.value}/template?format=${format}`);
-                if (!res.ok) { alert('Could not download template.'); return; }
+                if (!res.ok) { notify('Could not download template.', 'error'); return; }
                 const blob = await res.blob();
                 triggerDownload(blob, filenameFromResponse(res, `${importEntity.value}_import_template.${format === 'xlsx' ? 'xlsx' : 'csv'}`));
-            } catch (e) { alert('Could not download template.'); }
+            } catch (e) { notify('Could not download template.', 'error'); }
         };
 
         const submitImport = async () => {
@@ -2976,7 +3057,7 @@ createApp({
         const confirmClearLog = async () => {
             if (!clearFrom.value || !clearTo.value) { clearLogError.value = 'Please choose both dates.'; return; }
             if (clearFrom.value > clearTo.value) { clearLogError.value = 'The "From" date cannot be after the "To" date.'; return; }
-            if (!confirm(`Permanently delete activity-log entries from ${clearFrom.value} to ${clearTo.value}? This cannot be undone.`)) return;
+            if (!await customConfirm(`Permanently delete activity-log entries from ${clearFrom.value} to ${clearTo.value}? This cannot be undone.`)) return;
             clearLogBusy.value = true; clearLogError.value = '';
             try {
                 const res = await apiFetch('/api/activity-logs/clear', {
@@ -2988,7 +3069,7 @@ createApp({
                 if (!res.ok) { clearLogError.value = data.message || 'Could not clear logs.'; return; }
                 showClearLogModal.value = false;
                 await fetchData();
-                alert(`Cleared ${data.deleted} log entr${data.deleted === 1 ? 'y' : 'ies'}.`);
+                notify(`Cleared ${data.deleted} log entr${data.deleted === 1 ? 'y' : 'ies'}.`);
             } catch (e) {
                 console.error('Clear log error', e);
                 clearLogError.value = 'Could not clear logs. Please try again.';
@@ -3171,6 +3252,7 @@ createApp({
             handleLogout,
             // Self-service profile / password change
             showProfileModal,
+            showNotificationsModal,
             profilePwd,
             profileBusy,
             profileError,
@@ -3237,6 +3319,8 @@ createApp({
             moveBackToBilled,
             moveBackToCompleted,
             billedSearch,
+            billedView,
+            allBilledTasksCombined,
             unbilledTasksFiltered,
             billedTasksFiltered,
             receivedTasksFiltered,
@@ -3304,6 +3388,9 @@ createApp({
             toasts,
             notify,
             dismissToast,
+            confirmState,
+            customConfirm,
+            isConfirmDestructive,
             changePalette,
             isDark,
             toggleDark,
@@ -3412,6 +3499,7 @@ createApp({
             // Persistent task timers
             timers,
             taskTimerDisplay,
+            taskTotalTime,
             isTaskRunning,
             taskHasTime,
             activeTimerTask,

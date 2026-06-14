@@ -42,7 +42,7 @@
                  class="pointer-events-auto bg-white rounded-xl px-4 py-3 flex items-start gap-2.5 animate-fade-in shadow-lg border border-gray-150 border-l-4"
                  :class="{ 'border-l-emerald-500': t.type==='success', 'border-l-red-500': t.type==='error', 'border-l-blue-500': t.type==='info' }">
                 <i class="fa-solid mt-0.5" :class="{ 'fa-circle-check text-emerald-500': t.type==='success', 'fa-circle-exclamation text-red-500': t.type==='error', 'fa-circle-info text-blue-500': t.type==='info' }"></i>
-                <span class="text-[13px] text-gray-700 flex-1 leading-snug">{{ t.message }}</span>
+                <span class="text-[13px] text-gray-700 flex-1 leading-snug whitespace-pre-line">{{ t.message }}</span>
                 <button @click="dismissToast(t.id)" class="text-gray-300 hover:text-gray-600 shrink-0"><i class="fa-solid fa-xmark text-[12px]"></i></button>
             </div>
         </div>
@@ -129,20 +129,12 @@
                         <span v-show="!isSidebarCollapsed">Billed</span>
                         <span v-show="!isSidebarCollapsed && (unbilledTasks.length + billedTasks.length)" class="ml-auto text-[11px] font-semibold bg-black/10 rounded-full px-2 py-0.5">{{ unbilledTasks.length + billedTasks.length }}</span>
                     </a>
-                    <a href="#" v-if="can('manage_billing')" @click="currentTab = 'received'" class="nav-link" :class="{ active: currentTab === 'received' }" :title="isSidebarCollapsed ? 'Received Fees' : ''">
-                        <i class="fa-solid fa-circle-check"></i>
-                        <span v-show="!isSidebarCollapsed">Received Fees</span>
-                        <span v-show="!isSidebarCollapsed && receivedTasks.length" class="ml-auto text-[11px] font-semibold bg-black/10 rounded-full px-2 py-0.5">{{ receivedTasks.length }}</span>
-                    </a>
+
                     <a href="#" @click="currentTab = 'reports'" class="nav-link" :class="{ active: currentTab === 'reports' }" :title="isSidebarCollapsed ? 'Reports' : ''">
                         <i class="fa-solid fa-chart-line"></i>
                         <span v-show="!isSidebarCollapsed">Reports</span>
                     </a>
-                    <a href="#" @click="currentTab = 'notifications'" class="nav-link" :class="{ active: currentTab === 'notifications' }" :title="isSidebarCollapsed ? 'Notifications' : ''">
-                        <i class="fa-solid fa-bell"></i>
-                        <span v-show="!isSidebarCollapsed">Notifications</span>
-                        <span v-if="unreadNotifCount" :class="isSidebarCollapsed ? 'ml-0' : 'ml-auto'" class="text-[11px] font-semibold bg-red-500 text-white rounded-full px-2 py-0.5 leading-none">{{ unreadNotifCount }}</span>
-                    </a>
+
                     <a href="#" @click="currentTab = 'activity'" class="nav-link" :class="{ active: currentTab === 'activity' }" :title="isSidebarCollapsed ? 'Activity Log' : ''">
                         <i class="fa-solid fa-clock-rotate-left"></i>
                         <span v-show="!isSidebarCollapsed">Activity Log</span>
@@ -167,45 +159,18 @@
                         <button @click="toggleDark" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" class="flex items-center justify-center w-9 h-9 hover:bg-gray-100 rounded-full text-gray-600 transition">
                             <i class="fa-solid text-[17px]" :class="isDark ? 'fa-sun text-gray-600' : 'fa-moon text-gray-600'"></i>
                         </button>
-                        <!-- Theme Swatch Palette Selector -->
-                        <div class="relative">
-                            <button @click.stop="showPaletteDropdown = !showPaletteDropdown" class="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded-full text-sm font-medium text-gray-600 transition" title="Select Theme Palette">
-                                <i class="fa-solid fa-palette text-accent text-[15px]"></i>
-                                <span class="hidden sm:inline">Theme</span>
-                            </button>
-                            <div v-if="showPaletteDropdown" class="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-2xl shadow-xl z-30 py-2 animate-fade-in">
-                                <div class="px-4 py-1.5 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Color Palette</div>
-                                <button v-for="(pal, key) in palettes" :key="key" @click="changePalette(key)" class="w-full text-left px-4 py-3 hover:bg-gray-50 transition flex items-center justify-between group">
-                                    <div class="flex flex-col gap-0.5">
-                                        <span class="text-[13px] font-semibold text-gray-800 group-hover:text-accent">{{ pal.name }}</span>
-                                        <div class="flex items-center gap-1.5 mt-1.5">
-                                            <span class="w-4 h-4 rounded-full border border-black/5" :style="{ backgroundColor: pal.primary }"></span>
-                                            <span class="w-4 h-4 rounded-full border border-black/5" :style="{ backgroundColor: pal.accent }"></span>
-                                            <span class="w-4 h-4 rounded-full border border-black/5" :style="{ backgroundColor: pal.accentLight }"></span>
-                                        </div>
-                                    </div>
-                                    <i v-if="currentPalette === key" class="fa-solid fa-circle-check text-green-500 text-sm"></i>
-                                </button>
-                            </div>
-                        </div>
 
-                        <!-- Total logged-in time today widget (top bar) -->
-                        <div v-if="currentTab === 'dashboard' || currentTab === 'timesheet'" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-150" title="Time spent on the app today">
-                            <i class="fa-solid fa-clock text-indigo-500 text-[13px]"></i>
-                            <span class="hidden md:inline text-[12px] text-indigo-800 font-semibold">Today:</span>
-                            <span class="font-mono font-semibold text-indigo-700 text-[13px] bg-white px-2 py-0.5 rounded-full shadow-xs border border-indigo-50">{{ fmtHMS(currentUserLoggedSecondsToday) }}</span>
-                        </div>
 
                         <!-- Running timer (top bar, before the notification bell) -->
-                        <div v-if="activeTimerTask" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200">
+                        <div v-if="activeTimerTask" class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-gray-100 border border-gray-200">
                             <i class="fa-solid fa-stopwatch text-accent text-[13px]"></i>
-                            <span class="hidden md:inline text-[12px] text-gray-500 font-medium truncate max-w-[160px]">{{ activeTimerTask.client_name }}</span>
-                            <span class="font-mono font-semibold text-gray-800 text-[13px]">{{ activeTimerDisplay }}</span>
-                            <button @click="pauseTaskTimer(activeTimerTask)" class="w-6 h-6 flex items-center justify-center rounded-full text-white" style="background: var(--color-stuck);" title="Pause timer"><i class="fa-solid fa-pause text-[10px]"></i></button>
+                            <span class="hidden md:inline text-[12.5px] text-gray-500 font-medium">Working on <strong class="text-gray-700 font-semibold">{{ activeTimerTask.service_name }}</strong> of <strong class="text-gray-700 font-semibold">{{ activeTimerTask.client_name }}</strong></span>
+                            <span class="font-mono font-semibold text-gray-800 text-[13px] ml-0.5">{{ activeTimerDisplay }}</span>
+                            <button @click="pauseTaskTimer(activeTimerTask)" class="w-6 h-6 flex items-center justify-center rounded-md text-white transition hover:opacity-85" style="background: var(--color-stuck);" title="Pause timer"><i class="fa-solid fa-pause text-[10px]"></i></button>
                         </div>
 
                         <!-- Notification bell -->
-                        <button @click="currentTab = 'notifications'" class="relative flex items-center justify-center w-9 h-9 hover:bg-gray-100 rounded-full text-gray-600 transition" title="Notifications">
+                        <button @click="showNotificationsModal = true" class="relative flex items-center justify-center w-9 h-9 hover:bg-gray-100 rounded-full text-gray-600 transition" title="Notifications">
                             <i class="fa-regular fa-bell text-[17px]"></i>
                             <span v-if="unreadNotifCount" class="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full">{{ unreadNotifCount }}</span>
                         </button>
@@ -227,6 +192,15 @@
                                     <div class="text-[13px] font-semibold text-gray-800 truncate">{{ currentUser.full_name }}</div>
                                     <div class="text-[11px] text-gray-400">{{ currentUser.username }} · {{ currentUser.role }}</div>
                                 </div>
+                                <div class="px-3.5 py-2 border-b border-gray-100 bg-indigo-50/20">
+                                    <div class="flex items-center gap-2 px-2.5 py-1.5 bg-indigo-50 border border-indigo-100 rounded-xl shadow-xs">
+                                        <div class="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-white shrink-0">
+                                            <i class="fa-solid fa-clock text-[11px]"></i>
+                                        </div>
+                                        <span class="text-[11px] font-bold text-indigo-900 leading-none">Logged Today:</span>
+                                        <span class="ml-auto font-mono font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-100 shadow-sm text-[12px]">{{ fmtHMS(currentUserLoggedSecondsToday) }}</span>
+                                    </div>
+                                </div>
                                 <button @click="showUserMenu = false; openProfileModal()" class="w-full text-left px-4 py-2.5 text-[13.5px] text-gray-700 hover:bg-gray-50 flex items-center gap-2.5"><i class="fa-solid fa-key text-gray-400 w-4"></i> Change password</button>
                                 <button @click="showUserMenu = false; handleLogout()" class="w-full text-left px-4 py-2.5 text-[13.5px] text-red-600 hover:bg-red-50 flex items-center gap-2.5"><i class="fa-solid fa-arrow-right-from-bracket w-4"></i> Sign out</button>
                             </div>
@@ -239,24 +213,13 @@
                     
                     <!-- 1. DASHBOARD TAB — Kanban Board -->
                     <main v-if="currentTab === 'dashboard'" class="p-7 space-y-6 max-w-7xl mx-auto">
-                        <!-- Active timer banner + export -->
-                        <div class="flex flex-wrap items-center gap-3">
-                            <div v-if="activeTimerTask" class="flex items-center gap-3 bg-white app-card px-4 py-2.5">
-                                <span class="text-[13px] text-gray-500 font-medium truncate max-w-[260px]"><i class="fa-solid fa-stopwatch text-accent mr-1.5"></i>Timing: {{ activeTimerTask.client_name }} · {{ activeTimerTask.service_name }}</span>
-                                <span class="font-mono font-semibold text-gray-800 text-[15px]">{{ activeTimerDisplay }}</span>
-                                <button @click="pauseTaskTimer(activeTimerTask)" class="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white transition" style="background: var(--color-stuck);"><i class="fa-solid fa-pause text-[11px] mr-1"></i> Pause</button>
+                        <!-- Active timer banner -->
+                        <div v-if="activeTimerTask" class="flex flex-wrap items-center gap-3">
+                            <div class="flex items-center gap-3 bg-white app-card px-4 py-2.5">
+                                <span class="text-[13px] text-gray-500 font-medium"><i class="fa-solid fa-stopwatch text-accent mr-1.5"></i>Working on <strong class="text-gray-800 font-semibold">{{ activeTimerTask.service_name }}</strong> of <strong class="text-gray-800 font-semibold">{{ activeTimerTask.client_name }}</strong></span>
+                                <span class="font-mono font-semibold text-gray-800 text-[15px] ml-1">{{ activeTimerDisplay }}</span>
+                                <button @click="pauseTaskTimer(activeTimerTask)" class="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white transition hover:opacity-85" style="background: var(--color-stuck);"><i class="fa-solid fa-pause text-[11px] mr-1"></i> Pause</button>
                             </div>
-
-                            <!-- Time Logged Today Widget -->
-                            <div class="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-xl shadow-sm">
-                                <i class="fa-solid fa-clock text-indigo-500 text-[14px]"></i>
-                                <span class="text-[13px] font-semibold text-indigo-850">Time Logged Today:</span>
-                                <span class="text-sm font-mono font-bold text-indigo-700 bg-white px-2 py-0.5 rounded shadow-sm border border-indigo-50">{{ fmtHMS(currentUserLoggedSecondsToday) }}</span>
-                            </div>
-
-                            <button v-if="isAdminOrPartner" @click="openExportModal('dashboard')" class="ml-auto px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
-                                <i class="fa-solid fa-file-export"></i> Export Full Report
-                            </button>
                         </div>
 
                         <!-- Summary count cards -->
@@ -281,7 +244,12 @@
 
                         <!-- Team status — who's online / working (hidden for Employees) -->
                         <div v-if="currentUser.role !== 'Employee'" class="app-card p-5">
-                            <h3 class="text-[16px] font-semibold text-gray-800 flex items-center gap-2 mb-4"><i class="fa-solid fa-users text-accent"></i> Team status <span class="text-[12px] font-normal text-gray-400">· {{ onlineUsers.length }} online</span></h3>
+                            <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+                                <h3 class="text-[16px] font-semibold text-gray-800 flex items-center gap-2"><i class="fa-solid fa-users text-accent"></i> Team status <span class="text-[12px] font-normal text-gray-400">· {{ onlineUsers.length }} online</span></h3>
+                                <button v-if="isAdminOrPartner" @click="openExportModal('dashboard')" class="px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-xl font-semibold text-sm shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fa-solid fa-file-export"></i> Export Full Report
+                                </button>
+                            </div>
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                                 <div v-for="p in presence" :key="p.user_id" class="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-gray-100" :class="p.online ? 'bg-emerald-50/40' : 'bg-gray-50/40'">
                                     <span class="w-2.5 h-2.5 rounded-full shrink-0" :class="p.online ? 'bg-emerald-500' : 'bg-gray-300'"></span>
@@ -341,9 +309,11 @@
                                     <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
                                     <input v-model="taskSearch" type="text" placeholder="Search tasks by Client/Service..." class="pl-10 pr-4 py-2 w-full text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
                                 </div>
-                                <div v-if="activeTimerTask" class="hidden lg:flex items-center gap-2 text-[13px] text-gray-500">
-                                    <i class="fa-solid fa-stopwatch text-accent"></i><span class="font-mono font-semibold text-gray-800">{{ activeTimerDisplay }}</span>
-                                    <button @click="pauseTaskTimer(activeTimerTask)" class="px-2 py-1 rounded-lg text-[12px] font-semibold text-white" style="background: var(--color-stuck);"><i class="fa-solid fa-pause text-[10px] mr-1"></i>Pause</button>
+                                <div v-if="activeTimerTask" class="hidden lg:flex items-center gap-2.5 text-[13px] text-gray-500">
+                                    <i class="fa-solid fa-stopwatch text-accent"></i>
+                                    <span>Working on <strong class="text-gray-800 font-semibold">{{ activeTimerTask.service_name }}</strong> of <strong class="text-gray-800 font-semibold">{{ activeTimerTask.client_name }}</strong></span>
+                                    <span class="font-mono font-semibold text-gray-800 ml-1">{{ activeTimerDisplay }}</span>
+                                    <button @click="pauseTaskTimer(activeTimerTask)" class="px-2 py-1 rounded-lg text-[12px] font-semibold text-white transition hover:opacity-85" style="background: var(--color-stuck);"><i class="fa-solid fa-pause text-[10px] mr-1"></i>Pause</button>
                                 </div>
                             </div>
                             
@@ -404,25 +374,37 @@
                                             <th class="py-2.5 px-2">Due</th>
                                             <th class="py-2.5 px-2">Status</th>
                                             <th class="py-2.5 px-2">Assigned</th>
-                                            <th class="py-2.5 px-2 text-right">Actions</th>
+                                            <th class="py-2.5 px-2 text-center">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-100">
                                         <tr v-for="task in tableTasks" :key="task.id" class="hover:bg-gray-50/50 align-top">
-                                            <td v-if="can('delete_task')" class="py-2 px-2"><input type="checkbox" :checked="taskSel.has(task.id)" @change="taskSel.toggle(task.id)"></td>
+                                            <td v-if="can('delete_task')" class="py-2 px-2">
+                                                <input type="checkbox" 
+                                                       :disabled="currentUser.role === 'Employee' && task.status === 'Completed'"
+                                                       :checked="taskSel.has(task.id)" 
+                                                       @change="taskSel.toggle(task.id)"
+                                                       class="disabled:opacity-50 disabled:cursor-not-allowed">
+                                            </td>
                                             <td class="py-2 px-2 font-mono text-[11.5px] text-gray-500 truncate">{{ taskSerial(task) }}</td>
                                             <td class="py-2 px-2 font-semibold text-gray-800 truncate" :title="task.client_name">{{ task.client_name }}</td>
                                             <td class="py-2 px-2 text-gray-700 truncate" :title="task.service_name">{{ task.service_name }}</td>
                                             <td class="py-2 px-2 text-gray-500 truncate">{{ task.period }}</td>
                                             <td class="py-2 px-2 font-mono text-[11.5px] text-gray-500 whitespace-nowrap">{{ task.due_date || '—' }}</td>
                                             <td class="py-2 px-2">
-                                                <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold border"
-                                                      :class="{
-                                                        'bg-blue-50 text-blue-700 border-blue-150': task.status === 'Working',
-                                                        'bg-amber-50 text-amber-700 border-amber-150': task.status === 'Pending',
-                                                        'bg-emerald-50 text-emerald-700 border-emerald-150': task.status === 'Completed'
-                                                      }">{{ task.status }}</span>
-                                            </td>
+                                                 <div class="flex items-center gap-1.5">
+                                                     <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold border"
+                                                           :class="{
+                                                             'bg-blue-50 text-blue-700 border-blue-150': task.status === 'Working',
+                                                             'bg-amber-50 text-amber-700 border-amber-150': task.status === 'Pending',
+                                                             'bg-emerald-50 text-emerald-700 border-emerald-150': task.status === 'Completed'
+                                                           }">{{ task.status }}</span>
+                                                     <span v-if="currentUser.role !== 'Employee' && taskTotalTime(task)" class="inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium whitespace-nowrap" title="Total time logged">
+                                                         <i class="fa-solid fa-clock text-[10px] text-gray-400"></i>
+                                                         {{ taskTotalTime(task) }}
+                                                     </span>
+                                                 </div>
+                                             </td>
                                             <td class="py-2 px-2 text-gray-700">
                                                 <div class="truncate" :title="task.assigned_to_name || 'Unassigned'">{{ task.assigned_to_name || 'Unassigned' }}</div>
                                                 <!-- Delegation shown inline: (by assignee → to delegate) -->
@@ -433,14 +415,19 @@
                                                 <div v-if="approvalBadge(task) === 'approved'" class="text-[10px] font-semibold text-emerald-600">approved</div>
                                                 <div v-else-if="approvalBadge(task) === 'pending'" class="text-[10px] font-semibold text-blue-600">pending approval</div>
                                             </td>
-                                            <td class="py-2 px-2 text-right whitespace-nowrap">
-                                                <div class="flex items-center justify-end gap-0.5">
+                                            <td class="py-2 px-2 text-center whitespace-nowrap">
+                                                <div class="flex items-center justify-center gap-0.5">
                                                     <span v-if="taskHasTime(task.id)" class="font-mono text-[11px] text-gray-500 mr-1">{{ taskTimerDisplay(task.id) }}</span>
                                                     <button v-if="!isTaskRunning(task.id) && task.assigned_to && task.status !== 'Completed'" @click="startTaskTimer(task)" class="text-accent hover:bg-accent-light p-1 rounded" :title="taskHasTime(task.id) ? 'Resume timer' : 'Start timer'"><i class="fa-solid fa-play text-[11px]"></i></button>
                                                     <button v-else-if="isTaskRunning(task.id)" @click="pauseTaskTimer(task)" class="text-white p-1 rounded" style="background: var(--color-stuck);" title="Pause timer"><i class="fa-solid fa-pause text-[11px]"></i></button>
-                                                    <button v-if="task.status === 'Completed' && !task.billing_stage && can('manage_billing')" @click="openBillingModal(task)" class="px-1.5 py-1 rounded text-[10.5px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 inline-flex items-center gap-1" title="Bill this task"><i class="fa-solid fa-file-invoice-dollar text-[10px]"></i> Billed</button>
                                                     <button v-if="canEditTask(task)" @click="startEditTask(task)" class="text-gray-500 hover:text-accent hover:bg-accent-light p-1 rounded" title="Edit"><i class="fa-solid fa-pen text-[11px]"></i></button>
-                                                    <button v-if="can('delete_task')" @click="deleteTask(task)" class="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1 rounded" title="Delete"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
+                                                    <button v-if="can('delete_task')" 
+                                                            :disabled="currentUser.role === 'Employee' && task.status === 'Completed'"
+                                                            @click="deleteTask(task)" 
+                                                            class="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1 rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-500 disabled:hover:bg-transparent" 
+                                                            :title="currentUser.role === 'Employee' && task.status === 'Completed' ? 'Completed tasks cannot be deleted by Employees' : 'Delete'">
+                                                        <i class="fa-solid fa-trash-can text-[11px] pointer-events-none"></i>
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -472,7 +459,7 @@
                                     <div v-for="task in col.tasks" :key="task.id"
                                          class="kanban-card p-2.5"
                                          :class="['rail-' + col.key.toLowerCase(), { dragging: draggedTaskId === task.id, 'locked-task': !!task.locked }]"
-                                         draggable="true"
+                                         :draggable="currentUser.role !== 'Employee' || task.status !== 'Completed'"
                                          @dragstart="onTaskDragStart(task, $event)"
                                          @dragend="onTaskDragEnd">
                                         <div class="flex items-start justify-between gap-2">
@@ -485,8 +472,12 @@
                                                 <button v-if="canEditTask(task)" @click="startEditTask(task)" class="text-gray-400 hover:text-accent hover:bg-accent-light p-1.5 rounded-lg transition" title="Edit task">
                                                     <i class="fa-solid fa-pen text-[12px]"></i>
                                                 </button>
-                                                <button v-if="can('delete_task')" @click="deleteTask(task)" class="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete task">
-                                                    <i class="fa-solid fa-trash-can text-[12px]"></i>
+                                                <button v-if="can('delete_task')" 
+                                                        :disabled="currentUser.role === 'Employee' && task.status === 'Completed'"
+                                                        @click="deleteTask(task)" 
+                                                        class="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:bg-transparent" 
+                                                        :title="currentUser.role === 'Employee' && task.status === 'Completed' ? 'Completed tasks cannot be deleted by Employees' : 'Delete task'">
+                                                    <i class="fa-solid fa-trash-can text-[12px] pointer-events-none"></i>
                                                 </button>
                                             </div>
                                         </div>
@@ -1386,13 +1377,21 @@
                                 <div class="app-card px-5 py-3 rail-completed"><p class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Total ({{ billedTotals.count }})</p><p class="text-xl font-semibold text-gray-800 mt-0.5">{{ fmtMoney(billedTotals.total) }}</p></div>
                             </div>
                             <div class="flex items-center gap-2">
-                                <details v-if="can('delete_task') && billedTasks.length" class="relative">
+                                <div class="inline-flex rounded-xl border border-gray-200 overflow-hidden shrink-0">
+                                    <button @click="billedView='kanban'" class="px-3 py-2 text-[13px] font-semibold transition"
+                                            :class="billedView==='kanban' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                                            title="Card / Kanban view"><i class="fa-solid fa-grip"></i></button>
+                                    <button @click="billedView='table'" class="px-3 py-2 text-[13px] font-semibold transition"
+                                            :class="billedView==='table' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                                            title="Table view"><i class="fa-solid fa-table-list"></i></button>
+                                </div>
+                                <details v-if="can('delete_task') && allBilledTasksCombined.length" class="relative">
                                     <summary class="list-none cursor-pointer px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[15px] shadow-sm flex items-center gap-1.5 whitespace-nowrap">
                                         <i class="fa-solid fa-trash-can"></i> Delete <span v-if="billedSel.count" class="text-[12px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ billedSel.count }}</span>
                                         <i class="fa-solid fa-chevron-down text-[11px]"></i>
                                     </summary>
                                     <div class="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
-                                        <button @click="billedSel.selectAll(billedTasks.map(t=>t.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ billedTasks.length }})</button>
+                                        <button @click="billedSel.selectAll(allBilledTasksCombined.map(t=>t.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ allBilledTasksCombined.length }})</button>
                                         <button @click="billedSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
                                         <div class="border-t border-gray-150 my-1"></div>
                                         <button @click="bulkDeleteBilled()" :disabled="!billedSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ billedSel.count }})</button>
@@ -1405,7 +1404,7 @@
                         </div>
 
                         <!-- Kanban Board for Billed Section -->
-                        <div class="flex gap-4 flex-1 min-h-[500px] overflow-x-auto pb-4">
+                        <div v-if="billedView === 'kanban'" class="flex gap-4 flex-1 min-h-[500px] overflow-x-auto pb-4">
                             <!-- Column 1: Completed (Unbilled) -->
                             <div class="kanban-col flex flex-col flex-1 min-w-[300px] bg-gray-50/50 rounded-2xl border border-gray-150 p-3"
                                  :class="{ 'drag-over': dragOverBilledCol === 'Completed' }"
@@ -1426,7 +1425,12 @@
                                           draggable="true"
                                           @dragstart="onTaskDragStart(task, $event)"
                                           @dragend="onTaskDragEnd">
-                                          <div class="font-semibold text-[15px] text-gray-800 leading-snug">{{ task.client_name }}</div>
+                                          <div class="flex items-start justify-between gap-2">
+                                              <div class="min-w-0 flex items-start gap-2">
+                                                  <input v-if="can('delete_task')" type="checkbox" :checked="billedSel.has(task.id)" @change="billedSel.toggle(task.id)" class="mt-1 shrink-0">
+                                                  <div class="font-semibold text-[15px] text-gray-800 leading-snug">{{ task.client_name }}</div>
+                                              </div>
+                                          </div>
                                           <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12px] font-medium">{{ task.service_name }}</div>
                                           <div class="mt-2.5 flex items-center justify-between text-[12.5px] text-gray-500">
                                               <span class="font-medium"><span class="text-gray-400">{{ taskSerial(task) }}</span> · {{ task.period }}</span>
@@ -1506,7 +1510,12 @@
                                           draggable="true"
                                           @dragstart="onTaskDragStart(task, $event)"
                                           @dragend="onTaskDragEnd">
-                                          <div class="font-semibold text-[15px] text-gray-800 leading-snug">{{ task.client_name }}</div>
+                                          <div class="flex items-start justify-between gap-2">
+                                              <div class="min-w-0 flex items-start gap-2">
+                                                  <input v-if="can('delete_task')" type="checkbox" :checked="billedSel.has(task.id)" @change="billedSel.toggle(task.id)" class="mt-1 shrink-0">
+                                                  <div class="font-semibold text-[15px] text-gray-800 leading-snug">{{ task.client_name }}</div>
+                                              </div>
+                                          </div>
                                           <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12px] font-medium">{{ task.service_name }}</div>
                                           <div class="mt-2.5 flex items-center justify-between text-[12.5px] text-gray-500">
                                               <span class="font-medium"><span class="text-gray-400">{{ taskSerial(task) }}</span> · {{ task.period }}</span>
@@ -1527,64 +1536,75 @@
                                  </div>
                             </div>
                         </div>
+
+                        <!-- Table View for Billed Section -->
+                        <div v-if="billedView === 'table'" class="bg-white rounded-2xl shadow-sm border border-gray-150 flex-1 min-h-[500px] overflow-hidden flex flex-col">
+                            <div class="overflow-auto">
+                                <table class="w-full text-left text-[13px] lined-table">
+                                    <thead class="bg-gray-50 border-b border-gray-100 text-gray-500 text-[10.5px] font-bold uppercase tracking-wider sticky top-0 z-10">
+                                        <tr>
+                                            <th v-if="can('delete_task')" class="py-2 px-2"><input type="checkbox" :checked="allBilledTasksCombined.length && billedSel.count === allBilledTasksCombined.length" @change="$event.target.checked ? billedSel.selectAll(allBilledTasksCombined.map(t=>t.id)) : billedSel.clear()"></th>
+                                            <th class="py-2 px-2">Task ID</th>
+                                            <th class="py-2 px-2">Client</th>
+                                            <th class="py-2 px-2">Service</th>
+                                            <th class="py-2 px-2">Period</th>
+                                            <th class="py-2 px-2">Due</th>
+                                            <th class="py-2 px-2">Stage</th>
+                                            <th class="py-2 px-2">Billed/Received Date</th>
+                                            <th class="py-2 px-2 text-right">Billed</th>
+                                            <th class="py-2 px-2 text-right">GST</th>
+                                            <th class="py-2 px-2 text-right">Total</th>
+                                            <th class="py-2 px-2 text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        <tr v-for="task in allBilledTasksCombined" :key="task.id" class="hover:bg-gray-50/50 align-middle">
+                                            <td v-if="can('delete_task')" class="py-2 px-2">
+                                                <input type="checkbox" :checked="billedSel.has(task.id)" @change="billedSel.toggle(task.id)">
+                                            </td>
+                                            <td class="py-2 px-2 font-mono text-[11.5px] text-gray-500 truncate">{{ taskSerial(task) }}</td>
+                                            <td class="py-2 px-2 font-semibold text-gray-800 truncate" :title="task.client_name">{{ task.client_name }}</td>
+                                            <td class="py-2 px-2 text-gray-700 truncate" :title="task.service_name">{{ task.service_name }}</td>
+                                            <td class="py-2 px-2 text-gray-500 truncate">{{ task.period }}</td>
+                                            <td class="py-2 px-2 font-mono text-[11.5px] text-gray-500 whitespace-nowrap">{{ task.due_date || '—' }}</td>
+                                            <td class="py-2 px-2">
+                                                <span v-if="!task.billing_stage" class="px-1.5 py-0.5 rounded text-[11px] font-semibold border bg-gray-50 text-gray-700 border-gray-200">Completed (Unbilled)</span>
+                                                <span v-else-if="task.billing_stage === 'Billed'" class="px-1.5 py-0.5 rounded text-[11px] font-semibold border bg-blue-50 text-blue-700 border-blue-150">Billed</span>
+                                                <span v-else-if="task.billing_stage === 'Received'" class="px-1.5 py-0.5 rounded text-[11px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-150">Received</span>
+                                            </td>
+                                            <td class="py-2 px-2">
+                                                <div class="text-[11.5px] text-gray-500 leading-tight">
+                                                    <div v-if="task.billed_date">Billed: {{ task.billed_date }}</div>
+                                                    <div v-if="task.received_date">Recd: {{ task.received_date }}</div>
+                                                    <div v-if="!task.billed_date && !task.received_date">—</div>
+                                                </div>
+                                            </td>
+                                            <td class="py-2 px-2 text-right font-semibold text-gray-700 font-mono">{{ task.billing_stage ? fmtMoney(task.billed_amount) : '—' }}</td>
+                                            <td class="py-2 px-2 text-right font-semibold text-gray-700 font-mono">{{ task.billing_stage ? fmtMoney(task.gst_amount) : '—' }}</td>
+                                            <td class="py-2 px-2 text-right font-bold text-emerald-700 font-mono">{{ task.billing_stage ? fmtMoney(task.total_amount) : '—' }}</td>
+                                            <td class="py-2 px-2 text-center whitespace-nowrap">
+                                                <div class="flex items-center justify-center gap-1.5">
+                                                    <template v-if="!task.billing_stage">
+                                                        <button @click="openBillingModal(task)" class="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-semibold inline-flex items-center gap-1 transition"><i class="fa-solid fa-file-invoice-dollar"></i> Bill</button>
+                                                    </template>
+                                                    <template v-else-if="task.billing_stage === 'Billed'">
+                                                        <button @click="markReceived(task)" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[12px] font-semibold inline-flex items-center gap-1 transition"><i class="fa-solid fa-circle-check"></i> Received</button>
+                                                        <button @click="moveBackToCompleted(task)" class="p-1.5 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-lg text-[12px] transition" title="Move back to Completed"><i class="fa-solid fa-rotate-left"></i></button>
+                                                    </template>
+                                                    <template v-else-if="task.billing_stage === 'Received'">
+                                                        <button @click="moveBackToBilled(task)" class="px-2.5 py-1.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg text-[12px] font-semibold inline-flex items-center gap-1 transition" title="Move back to Billed"><i class="fa-solid fa-rotate-left"></i> Move back to Billed</button>
+                                                    </template>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div v-if="allBilledTasksCombined.length === 0" class="text-center py-12 text-gray-400 italic text-[13px] border-t border-gray-100">No matching tasks.</div>
+                        </div>
                     </main>
 
-                    <!-- 9. RECEIVED FEES SECTION -->
-                    <main v-if="currentTab === 'received' && can('manage_billing')" class="p-7 space-y-6 max-w-7xl mx-auto">
-                        <div class="app-card px-5 py-3 inline-flex items-center gap-2.5">
-                            <i class="fa-solid fa-circle-check text-accent"></i>
-                            <span class="text-[13px] text-gray-500 font-semibold uppercase tracking-wide">Total Received</span>
-                            <span class="text-2xl font-semibold text-gray-800">{{ receivedTasks.length }}</span>
-                        </div>
-                        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
-                            <div class="grid grid-cols-3 gap-3 w-full sm:w-auto">
-                                <div class="app-card px-5 py-3 rail-working"><p class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Received</p><p class="text-xl font-semibold text-gray-800 mt-0.5">{{ fmtMoney(receivedTotals.billed) }}</p></div>
-                                <div class="app-card px-5 py-3 rail-pending"><p class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">GST</p><p class="text-xl font-semibold text-gray-800 mt-0.5">{{ fmtMoney(receivedTotals.gst) }}</p></div>
-                                <div class="app-card px-5 py-3 rail-completed"><p class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Total ({{ receivedTotals.count }})</p><p class="text-xl font-semibold text-gray-800 mt-0.5">{{ fmtMoney(receivedTotals.total) }}</p></div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <details v-if="can('delete_task') && receivedTasks.length" class="relative">
-                                    <summary class="list-none cursor-pointer px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[15px] shadow-sm flex items-center gap-1.5 whitespace-nowrap">
-                                        <i class="fa-solid fa-trash-can"></i> Delete <span v-if="receivedSel.count" class="text-[12px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ receivedSel.count }}</span>
-                                        <i class="fa-solid fa-chevron-down text-[11px]"></i>
-                                    </summary>
-                                    <div class="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
-                                        <button @click="receivedSel.selectAll(receivedTasks.map(t=>t.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all ({{ receivedTasks.length }})</button>
-                                        <button @click="receivedSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
-                                        <div class="border-t border-gray-100 my-1"></div>
-                                        <button @click="bulkDeleteReceived()" :disabled="!receivedSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ receivedSel.count }})</button>
-                                    </div>
-                                </details>
-                                <button @click="openExportModal('received')" class="px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[15px] shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
-                                    <i class="fa-solid fa-file-export"></i> Export
-                                </button>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
-                            <div v-for="task in receivedTasks" :key="task.id" class="app-card p-3.5 flex flex-col gap-2.5" style="box-shadow: inset 4px 0 0 #059669;">
-                                <div class="flex items-start justify-between gap-2">
-                                    <div class="min-w-0 flex items-start gap-2">
-                                        <input v-if="can('delete_task')" type="checkbox" :checked="receivedSel.has(task.id)" @change="receivedSel.toggle(task.id)" class="mt-1 shrink-0">
-                                        <div class="min-w-0">
-                                            <div class="font-semibold text-[15px] text-gray-800 truncate">{{ task.client_name }}</div>
-                                            <div class="mt-1 inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[12.5px] font-medium">{{ task.service_name }}</div>
-                                        </div>
-                                    </div>
-                                    <span class="text-[12px] text-gray-400 font-mono shrink-0 whitespace-nowrap">{{ taskSerial(task) }} · {{ task.period }}</span>
-                                </div>
-                                <div class="grid grid-cols-3 gap-2 text-center border-y border-gray-100 py-2.5">
-                                    <div><p class="text-[10.5px] text-gray-400 uppercase tracking-wide">Billed</p><p class="text-[14px] font-semibold text-gray-800 mt-0.5">{{ fmtMoney(task.billed_amount) }}</p></div>
-                                    <div><p class="text-[10.5px] text-gray-400 uppercase tracking-wide">GST</p><p class="text-[14px] font-semibold text-gray-800 mt-0.5">{{ fmtMoney(task.gst_amount) }}</p></div>
-                                    <div><p class="text-[10.5px] text-gray-400 uppercase tracking-wide">Total</p><p class="text-[14px] font-semibold text-emerald-700 mt-0.5">{{ fmtMoney(task.total_amount) }}</p></div>
-                                </div>
-                                <div class="text-[12px] text-gray-400"><i class="fa-solid fa-circle-check mr-1 text-emerald-500"></i>Received on {{ task.received_date || '—' }}</div>
-                                <div class="pt-1">
-                                    <button @click="moveBackToBilled(task)" class="w-full px-3 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 transition"><i class="fa-solid fa-rotate-left"></i> Move back to Billed</button>
-                                </div>
-                            </div>
-                            <div v-if="receivedTasks.length === 0" class="col-span-full text-center py-14 text-gray-400 italic app-card">No received-fees tasks yet.</div>
-                        </div>
-                    </main>
+
 
                     <!-- 11. CALENDAR TAB -->
                     <main v-if="currentTab === 'calendar'" class="p-7 space-y-5 max-w-6xl mx-auto">
@@ -1627,69 +1647,7 @@
                         </div>
                     </main>
 
-                    <!-- 10. NOTIFICATIONS TAB -->
-                    <main v-if="currentTab === 'notifications'" class="p-7 space-y-5 max-w-3xl mx-auto">
-                        <div class="app-card px-5 py-3 inline-flex items-center gap-2.5">
-                            <i class="fa-solid fa-bell text-accent"></i>
-                            <span class="text-[13px] text-gray-500 font-semibold uppercase tracking-wide">Total Notifications</span>
-                            <span class="text-2xl font-semibold text-gray-800">{{ notifications.length }}</span>
-                            <span v-if="unreadNotifCount" class="text-[12px] font-semibold text-red-600 ml-1">({{ unreadNotifCount }} unread)</span>
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2"><i class="fa-solid fa-bell text-accent"></i> Notifications</h3>
-                                <p class="text-xs text-gray-500 mt-0.5">Updates about tasks assigned, delegated, and created by your team.</p>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <button v-if="unreadNotifCount" @click="markAllNotifRead" class="px-3 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[13px] shadow-sm transition flex items-center gap-1.5">
-                                    <i class="fa-solid fa-check-double"></i> Mark all read
-                                </button>
-                                <details v-if="notifications.length" class="relative">
-                                    <summary class="list-none cursor-pointer px-3 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[13px] shadow-sm flex items-center gap-1.5">
-                                        <i class="fa-solid fa-trash-can"></i> Delete <span v-if="notifSel.count" class="text-[11px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ notifSel.count }}</span>
-                                        <i class="fa-solid fa-chevron-down text-[10px]"></i>
-                                    </summary>
-                                    <div class="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
-                                        <button @click="notifSel.selectAll(notifications.filter(notifDeletable).map(n=>n.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all deletable ({{ notifications.filter(notifDeletable).length }})</button>
-                                        <button @click="notifSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
-                                        <div class="border-t border-gray-100 my-1"></div>
-                                        <button @click="bulkDeleteNotifs()" :disabled="!notifSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ notifSel.count }})</button>
-                                    </div>
-                                </details>
-                            </div>
-                        </div>
-                        <div class="app-card divide-y divide-gray-50">
-                            <div v-for="n in notifications" :key="n.id"
-                                 @click="openNotificationTask(n)"
-                                 class="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition"
-                                 :class="!n.read_at ? 'bg-accent-light/40' : ''">
-                                <input v-if="notifDeletable(n)" type="checkbox" :checked="notifSel.has(n.id)" @click.stop @change="notifSel.toggle(n.id)" class="mt-2.5 shrink-0">
-                                <span v-else class="mt-2 shrink-0 w-3.5" title="Pending approval — can't be deleted yet"></span>
-                                <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-                                     :class="n.type === 'delegation' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'">
-                                    <i class="fa-solid" :class="notifIcon(n)"></i>
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <div class="text-[14px] text-gray-800 leading-snug" :class="n.read_at ? 'font-normal' : 'font-semibold'">{{ n.message }}</div>
-                                    <div class="text-[11.5px] text-gray-400 mt-0.5"><i class="fa-regular fa-clock mr-1"></i>{{ n.created_at }}</div>
-                                </div>
-                                <!-- Quick-action: open the task in approval mode (Admin/Partner/Manager
-                                     on Employee-created task notifications, while the task isn't yet approved). -->
-                                <button v-if="canLockTasks && n.type === 'self_task_created' && n.task_id && !notifTaskApproved(n)"
-                                        @click.stop="approveTaskFromNotification(n)"
-                                        class="shrink-0 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center gap-1.5 transition"
-                                        title="Review the task, make any changes, and approve it">
-                                    <i class="fa-solid fa-circle-check text-[10px]"></i> Approve
-                                </button>
-                                <span v-else-if="canLockTasks && n.type === 'self_task_created' && notifTaskApproved(n)" class="shrink-0 text-[11.5px] font-semibold text-emerald-700 inline-flex items-center gap-1">
-                                    <i class="fa-solid fa-circle-check text-[10px]"></i> Approved
-                                </span>
-                                <button v-if="notifDeletable(n)" @click.stop="deleteNotification(n)" class="shrink-0 text-gray-300 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete notification"><i class="fa-solid fa-trash-can text-[12px]"></i></button>
-                                <span v-else class="shrink-0 text-[10.5px] font-semibold text-blue-500 inline-flex items-center gap-1" title="Approve this task before the request can be dismissed"><i class="fa-solid fa-hourglass-half text-[10px]"></i> Pending</span>
-                            </div>
-                            <div v-if="!notifications.length" class="px-4 py-14 text-center text-gray-400 italic">No notifications yet.</div>
-                        </div>
-                    </main>
+
 
                 </div>
             </div>
@@ -2695,6 +2653,97 @@
                         <button @click="confirmBilling" :disabled="!billingReady || billingBusy" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition shadow disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2">
                             <i class="fa-solid" :class="billingBusy ? 'fa-spinner fa-spin' : 'fa-arrow-right'"></i>
                             {{ billingBusy ? 'Saving…' : 'Move to Billed' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL: NOTIFICATIONS -->
+            <div v-if="showNotificationsModal" @click.self="showNotificationsModal = false" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl border border-gray-150 overflow-hidden max-h-[90vh] flex flex-col">
+                    <div class="bg-primary text-white px-6 py-4 flex items-center justify-between shrink-0">
+                        <h4 class="text-base font-bold flex items-center gap-2">
+                            <i class="fa-solid fa-bell"></i>
+                            <span>Notifications</span>
+                            <span v-if="unreadNotifCount" class="text-xs font-semibold bg-red-500 text-white rounded-full px-1.5 py-0.5 leading-none">{{ unreadNotifCount }} unread</span>
+                        </h4>
+                        <button @click="showNotificationsModal = false" class="text-white/80 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <div class="p-6 overflow-y-auto space-y-4 flex-1">
+                        <div class="flex items-center justify-between flex-wrap gap-2 shrink-0 pb-3 border-b border-gray-100">
+                            <div>
+                                <span class="text-[13px] text-gray-500 font-semibold uppercase tracking-wide">Total Notifications: {{ notifications.length }}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button v-if="unreadNotifCount" @click="markAllNotifRead" class="px-3 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[13px] shadow-sm transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-check-double"></i> Mark all read
+                                </button>
+                                <details v-if="notifications.length" class="relative">
+                                    <summary class="list-none cursor-pointer px-3 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold text-[13px] shadow-sm flex items-center gap-1.5">
+                                        <i class="fa-solid fa-trash-can"></i> Delete <span v-if="notifSel.count" class="text-[11px] font-bold bg-red-100 text-red-700 rounded-full px-1.5">{{ notifSel.count }}</span>
+                                        <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                                    </summary>
+                                    <div class="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1.5">
+                                        <button @click="notifSel.selectAll(notifications.filter(notifDeletable).map(n=>n.id))" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square-check text-gray-400"></i> Select all deletable ({{ notifications.filter(notifDeletable).length }})</button>
+                                        <button @click="notifSel.clear()" class="w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 flex items-center gap-2"><i class="fa-regular fa-square text-gray-400"></i> Clear selection</button>
+                                        <div class="border-t border-gray-100 my-1"></div>
+                                        <button @click="bulkDeleteNotifs()" :disabled="!notifSel.count" class="w-full text-left px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can"></i> Delete selected ({{ notifSel.count }})</button>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+                        <div class="app-card divide-y divide-gray-50 max-h-[55vh] overflow-y-auto">
+                            <div v-for="n in notifications" :key="n.id"
+                                 @click="openNotificationTask(n); showNotificationsModal = false"
+                                 class="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition"
+                                 :class="!n.read_at ? 'bg-accent-light/40' : ''">
+                                <input v-if="notifDeletable(n)" type="checkbox" :checked="notifSel.has(n.id)" @click.stop @change="notifSel.toggle(n.id)" class="mt-2.5 shrink-0">
+                                <span v-else class="mt-2 shrink-0 w-3.5" title="Pending approval — can't be deleted yet"></span>
+                                <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                                     :class="n.type === 'delegation' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'">
+                                    <i class="fa-solid" :class="notifIcon(n)"></i>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-[14px] text-gray-800 leading-snug" :class="n.read_at ? 'font-normal' : 'font-semibold'">{{ n.message }}</div>
+                                    <div class="text-[11.5px] text-gray-400 mt-0.5"><i class="fa-regular fa-clock mr-1"></i>{{ n.created_at }}</div>
+                                </div>
+                                <button v-if="canLockTasks && n.type === 'self_task_created' && n.task_id && !notifTaskApproved(n)"
+                                        @click.stop="approveTaskFromNotification(n); showNotificationsModal = false"
+                                        class="shrink-0 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center gap-1.5 transition"
+                                        title="Review the task, make any changes, and approve it">
+                                    <i class="fa-solid fa-circle-check text-[10px]"></i> Approve
+                                </button>
+                                <span v-else-if="canLockTasks && n.type === 'self_task_created' && notifTaskApproved(n)" class="shrink-0 text-[11.5px] font-semibold text-emerald-700 inline-flex items-center gap-1">
+                                    <i class="fa-solid fa-circle-check text-[10px]"></i> Approved
+                                </span>
+                                <button v-if="notifDeletable(n)" @click.stop="deleteNotification(n)" class="shrink-0 text-gray-300 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition" title="Delete notification"><i class="fa-solid fa-trash-can text-[12px]"></i></button>
+                                <span v-else class="shrink-0 text-[10.5px] font-semibold text-blue-500 inline-flex items-center gap-1" title="Approve this task before the request can be dismissed"><i class="fa-solid fa-hourglass-half text-[10px]"></i> Pending</span>
+                            </div>
+                            <div v-if="!notifications.length" class="px-4 py-14 text-center text-gray-400 italic">No notifications yet.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL: CUSTOM CONFIRMATION DIALOG -->
+            <div v-if="confirmState.show" @click.self="confirmState.resolve(false); confirmState.show = false" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm border border-gray-100 overflow-hidden transform transition-all duration-300">
+                    <div class="p-6 text-center">
+                        <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full mb-4"
+                             :class="isConfirmDestructive ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'">
+                            <i class="fa-solid text-xl" :class="isConfirmDestructive ? 'fa-circle-exclamation' : 'fa-circle-info'"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-900 mb-2">Confirmation Required</h3>
+                        <p class="text-sm text-gray-500 whitespace-pre-line leading-relaxed">{{ confirmState.message }}</p>
+                    </div>
+                    <div class="flex items-center justify-center gap-3 px-6 py-4 border-t bg-gray-50/50">
+                        <button @click="confirmState.resolve(false); confirmState.show = false" class="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl transition">
+                            Cancel
+                        </button>
+                        <button @click="confirmState.resolve(true); confirmState.show = false" 
+                                :class="isConfirmDestructive ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:bg-primary-hover'"
+                                class="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl shadow-sm transition">
+                            Confirm
                         </button>
                     </div>
                 </div>
